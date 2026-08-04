@@ -2,19 +2,20 @@
 #include <cstdio>
 #include <thread>
 
-#include "startup.h"
+#include "run.h"
 #include "kafka_mock.h"
 #include "scheduler_mock.h"
 #include "spa_mock.h"
 
 using namespace dts;
 
-// 集成测试：上电 + mock 对端（调度/SPA/网管），运行数秒验证端到端 + 优雅退出
+// 集成测试：Run 装配 + mock 对端（调度/SPA/网管），运行数秒验证端到端 + 优雅退出
 int main() {
     std::printf("=== integration test start ===\n");
 
-    // 单进程上电：用 cpf 生成配置（含静态发现），mock 对端为空（stub），验证启动/优雅退出
-    StartUp(DTS_TEST_CFG);
+    // Run 常驻阻塞，放后台线程；主线程 mock 对端 + 数秒后 Stop() 优雅退出
+    int runRc = 0;
+    std::thread app([&] { runRc = Run(DTS_TEST_CFG); });
 
     KafkaMock kafka;
     kafka.Start();
@@ -25,7 +26,9 @@ int main() {
 
     std::this_thread::sleep_for(std::chrono::seconds(3));
 
-    ShutDown();
-    std::printf("=== integration test done ===\n");
-    return 0;
+    Stop();
+    app.join();
+
+    std::printf("=== integration test done (run_rc=%d) ===\n", runRc);
+    return runRc == 0 ? 0 : 1;
 }

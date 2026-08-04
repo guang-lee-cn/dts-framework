@@ -1,10 +1,10 @@
 # 组合根（上电装配）：无编译产物，接口库仅提供 include；
-# startup.cpp 含进程特定生成路由头，由各可执行（cpf_dts/dpf_dts/测试）按进程编译。
+# run.cpp 含进程特定生成路由头，由各可执行（cpf_dts/dpf_dts/测试）按进程编译。
 add_library(bootstrap INTERFACE)
 target_include_directories(bootstrap INTERFACE include)
 
-# 进程上电公共源码（含 startup.cpp），供各可执行复用
+# 进程上电公共源码（含 run.cpp），供各可执行复用
 set(DTS_STARTUP_SOURCES
   ${CMAKE_CURRENT_SOURCE_DIR}/main.cpp
-  ${CMAKE_CURRENT_SOURCE_DIR}/src/startup.cpp
+  ${CMAKE_CURRENT_SOURCE_DIR}/src/run.cpp
   PARENT_SCOPE)

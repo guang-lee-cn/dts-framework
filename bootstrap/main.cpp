@@ -1,37 +1,26 @@
 #include <csignal>
 #include <cstdio>
 
-#include <unistd.h>
-
-#include "startup.h"
+#include "run.h"
 
 using namespace dts;
 
 namespace {
-volatile sig_atomic_t g_running = 1;
-
 void OnSignal(int) {
-    g_running = 0;
+    Stop();
 }
 }  // namespace
 
-// 进程入口：上电 + 常驻，SIGINT/SIGTERM（Ctrl+C / kill）退出
+// 进程入口：信号处理 + 常驻运行，SIGINT/SIGTERM（Ctrl+C / kill）退出
 // 用法：dts <进程生成配置.json>（gen_detmw.py 产物，如 build/generated/detmw/cpf-dts/cpf-dts.json）
 int main(int argc, char* argv[]) {
     std::signal(SIGINT, OnSignal);
     std::signal(SIGTERM, OnSignal);
 
-    if (StartUp(argc > 1 ? argv[1] : nullptr) != 0) {
-        std::printf("=== dts startup failed ===\n");
+    if (Run(argc > 1 ? argv[1] : nullptr) != 0) {
+        std::printf("=== dts run failed ===\n");
         return 1;
     }
-
-    std::printf("=== dts running, Ctrl+C / kill to exit ===\n");
-    while (g_running) {
-        pause();  // 挂起等信号，信号处理置 g_running=0 后退出
-    }
-
-    ShutDown();
-    std::printf("=== done ===\n");
+    std::printf("=== dts done ===\n");
     return 0;
 }

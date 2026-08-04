@@ -1,6 +1,8 @@
-#include "startup.h"
+#include "run.h"
 
+#include <condition_variable>
 #include <memory>
+#include <mutex>
 #include <string>
 #include <vector>
 
@@ -40,7 +42,7 @@ struct Subscription {
 void OnRouteMsg(void* userCtx, const uint8_t* data, uint32_t len) {
     auto* sub = static_cast<Subscription*>(userCtx);
     if (sub == nullptr || sub->thread == nullptr || (data == nullptr && len > 0)) {
-        spdlog::warn("[StartUp] route ctx invalid");
+        spdlog::warn("[Run] route ctx invalid");
         return;
     }
     sub->thread->m_mailbox.Send(sub->ep.msg_id, data, len);
@@ -65,7 +67,7 @@ struct Worker {
             if (comm.subscribe(sub->ep, OnRouteMsg, sub.get()) == 0) {
                 subs.push_back(std::move(sub));
             } else {
-                spdlog::error("[StartUp] {} subscribe failed: {}", name, sub->ep.ToString());
+                spdlog::error("[Run] {} subscribe failed: {}", name, sub->ep.ToString());
             }
         }
         h = detsched::CreateThread(name, prio, ThreadEntry, &ctx);
@@ -93,9 +95,24 @@ Process& State() {
 
 }  // namespace
 
-int StartUp(const char* cfg_path) {
+// 停止标志：Run 的常驻循环等待它（cv 唤醒，兼容信号回调与测试线程调用）
+namespace {
+std::mutex g_runMutex;
+std::condition_variable g_runCv;
+bool g_stopped = false;
+}  // namespace
+
+void Stop() {
+    {
+        std::lock_guard<std::mutex> lk(g_runMutex);
+        g_stopped = true;
+    }
+    g_runCv.notify_all();
+}
+
+int Run(const char* cfg_path) {
     if (cfg_path == nullptr) {
-        spdlog::error("[StartUp] cfg_path is null");
+        spdlog::error("[Run] cfg_path is null");
         return 1;
     }
 
@@ -123,20 +140,22 @@ int StartUp(const char* cfg_path) {
     p.log.Start(*p.comm, "log", LogEntry, detsched::SchedPrio::Dts::LOG_PRIO, SESSION_TYPE_DTS,
                 kLogSubRoutes);
 
-    spdlog::info("[StartUp] up (cfg={})", cfg_path);
-    return 0;
-}
+    spdlog::info("[Run] up (cfg={})", cfg_path);
 
-void ShutDown() {
-    auto& p = State();
-    // 反序：先停业务线程，再销毁 detmw
+    // 常驻运行：等待 Stop() 置停止标志后退出下电（cv 唤醒，不依赖信号）
+    {
+        std::unique_lock<std::mutex> lk(g_runMutex);
+        g_runCv.wait(lk, [] { return g_stopped; });
+    }
+
+    // 反序下电：先停业务线程，再销毁 detmw，最后停日志线程池
     p.task.Stop();
     p.data.Stop();
     p.log.Stop();
-
     DtsMwSet(nullptr);
     p.comm.reset();
-    spdlog::shutdown();  // 停异步日志线程池，刷空队列
+    spdlog::shutdown();
+    return 0;
 }
 
 }  // namespace dts

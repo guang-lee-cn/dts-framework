@@ -1,13 +1,13 @@
 # 质量维护目录：集成测试 + 跨进程测试链路 + 静态检查
 
-# 单进程上电测试：StartUp(cfg) + mock 对端（stub），验证启动/优雅退出
-# startup.cpp 含进程生成路由头，用 cpf 生成目录编译
+# 单进程上电测试：Run(cfg) + mock 对端（stub），验证启动/优雅退出
+# run.cpp 含进程生成路由头，用 cpf 生成目录编译
 add_executable(dts_integration_test
   test/integration_test.cpp
   test/scheduler_mock.cpp
   test/spa_mock.cpp
   test/kafka_mock.cpp
-  ${CMAKE_SOURCE_DIR}/bootstrap/src/startup.cpp)
+  ${CMAKE_SOURCE_DIR}/bootstrap/src/run.cpp)
 target_include_directories(dts_integration_test PRIVATE
   test
   ${DETMW_GEN_DIR}/cpf-dts)

@@ -47,7 +47,7 @@ add_custom_command(
 add_custom_target(detmw_gen
   DEPENDS ${DETMW_GEN_OUTPUTS})
 
-# 两个 dts 进程可执行：各自 include 各自生成目录，各自编译 startup.cpp（含生成路由头）
+# 两个 dts 进程可执行：各自 include 各自生成目录，各自编译 run.cpp（含生成路由头）
 set(DTS_PROCS cpf-dts dpf-dts)
 foreach(proc IN LISTS DTS_PROCS)
   string(REPLACE "-" "_" exe "${proc}")   # cpf-dts -> cpf_dts
