@@ -5,3 +5,5 @@ build-*/
 __pycache__/
 .vscode/
 .claude/
+.cache/
+compile_commands.json
