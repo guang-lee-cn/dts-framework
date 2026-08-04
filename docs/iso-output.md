@@ -53,15 +53,19 @@
 
 ## Operation 规划
 
-### 重构顺序（已调整：bootstrap 前置）
+### 重构顺序（2026-08-05 用户指定调整：detmw v2 前置）
+
+> 顺序以用户指定为准，Operation 阶段划分仅作参考，其余决策遵从 Operation。
 
 | 阶段 | 核心里程碑 | 输出 |
 |---|---|---|
 | 0 定约 | 重构范围 + console 方案定稿（内置/命令表/每实例 socket） | 本文档 |
-| 1 **bootstrap 前置审核** | 组合根装配审核；装 console 人类运维通道骨架 | bootstrap 重构完成 |
-| 2 infrastructure | console 模块：CommandExecutor（命令表驱动）+ socket 监听线程（低优先级域） | console 模块 v1 |
-| 3 detmw | 新增**控制通道**（外部服务 DDS 控制消息 → control 线程） | detmw 控制通道 |
+| 1 **detmw v2**（用户指定前置） | 全 C++：`detmw::Communicator` + `detmw_endpoint` 统一寻址 + `TransportInterface` 隔离底层 + 双 API（publish_internal/external）+ 控制通道 | detmw v2 完成 |
+| 2 bootstrap 适配 | 组合根 `Process{Communicator, Worker}` + 订阅归线程 + 装配四步 | bootstrap 重构完成 |
+| 3 infrastructure | console 模块：CommandExecutor（命令表驱动）+ socket 监听线程（低优先级域） | console 模块 v1 |
 | 4 detsched / contexts | 逐层重写，每层暴露 console 可调运维接口 | 五层全绿 |
+
+**detmw v2 关键决策**（D10）：不独立 so、全 C++、`TransportInterface` 隔离底层 DDS（换 FastDDS 只重写实现）、`detmw_endpoint`（std::string + ==/hash/ToString 内置）统一寻址、删 SessionKey。
 
 **资源估算**：阶段 1-2 约 1~2 人周；阶段 3 约 1 人周；阶段 4 视各层规模。
 

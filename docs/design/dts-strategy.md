@@ -79,6 +79,8 @@ flowchart TB
 | D6 | 调试指令（日志级别等）突发不加锁；外发版本 `DTS_CONSOLE_ENABLE` 裁剪 | spdlog::set_level 线程安全；生产不携带 |
 | D7 | detmw 统一 DDS + 双通道：进程内直通 mailbox，进程外走 DDS | FastDDS 零拷贝要求 plain+bounded，字节流（sequence<octet>）不满足，DDS 无法免序列化；接收侧本就全走 mailbox，直通不新增接收代码 |
 | D8 | 双 API：`mw_publish`（进程外 DDS）/ `mw_publish_inner`（进程内 mailbox 直通）；调用方直接选，运行时零查表 | 降低路由负担：发送侧不做"本地/外部"映射判断，负担移到编码期 |
+| D9 | 自定义 `TsRotatingSink`（继承 `base_sink`）实现日志文件：时间戳文件名 + 大小切分 + 总量删除；格式/队列/线程池由 spdlog 原生负责 | 内置 sink 无"时间戳+大小"组合；自定义只接管文件三件事，不污染 log 线程 |
+| D10 | detmw 不独立 .so 交付（同工程编译）、全 C++ 无 C ABI、`TransportInterface` 隔离底层 DDS；寻址键统一 `detmw_endpoint`（std::string，删 SessionKey） | 独立交付会把可替换的传输实现和接口绑死；换 DDS 靠内部抽象层不靠 ABI；单一结构消除双份维护 |
 
 ## 4. detmw 双通道设计（2026-08-04 定稿）
 
@@ -97,4 +99,13 @@ int mw_publish_inner(uint32_t msgId, const uint8_t* data, uint32_t len);
 
 **接收侧**：所有消息进线程 mailbox，`ThreadRun` 消费，不区分来源（DDS / 直通）。
 
-## 5. 下一步：bootstrap 重构（进行中，已落地 + 验证通过）
+## 5. 接口契约（Step 5 定稿，2026-08-04）
+
+集中存放于 `contracts/`：
+- [contracts/detmw.md](../contracts/detmw.md) — 消息寻址 + 数据 API + 进程内直通 API + 控制通道
+- [contracts/infrastructure.md](../contracts/infrastructure.md) — CommandExecutor / console / control / 日志模块
+- [contracts/contexts.md](../contracts/contexts.md) — 业务域端口（MwPort/SchedPort）+ 消息 ID
+- [contracts/bootstrap.md](../contracts/bootstrap.md) — StartUp/ShutDown 装配 + console 装配
+- [contracts/detsched.md](../contracts/detsched.md) — 线程工厂/注册表/运维查询
+
+## 6. 下一步：bootstrap 重构（已落地 + 验证通过）
