@@ -32,7 +32,12 @@ namespace dts {
 
 namespace {
 
-// 订阅：detmw 端点 + 所属线程 mailbox。注册在 comm 上，回调投递到 mailbox。
+// ---- 停止标志：Run 常驻循环等待（cv 唤醒，兼容信号回调与测试线程调用）----
+std::mutex g_runMutex;
+std::condition_variable g_runCv;
+bool g_stopped = false;
+
+// ---- 订阅：detmw 端点 + 所属线程 mailbox ----
 struct Subscription {
     detmw::endpoint ep;
     ThreadCtx* thread;  // 目标线程 mailbox（回调投递目标）
@@ -48,7 +53,7 @@ void OnRouteMsg(void* userCtx, const uint8_t* data, uint32_t len) {
     sub->thread->m_mailbox.Send(sub->ep.msg_id, data, len);
 }
 
-// 业务线程：上下文 + detsched 句柄 + 订阅集合（自包含，构造建好/析构回收）
+// ---- 业务线程：上下文 + detsched 句柄 + 订阅集合（自包含）----
 struct Worker {
     std::string name;
     ThreadCtx ctx;
@@ -80,12 +85,33 @@ struct Worker {
     }
 };
 
-// 组合根：通信站点 + 三个业务线程（Process 门面语义）
+// ---- 组合根：通信站点 + 三个业务线程 ----
 struct Process {
     std::unique_ptr<detmw::Communicator> comm;
     Worker task;
     Worker data;
     Worker log;
+
+    void Start() {
+        // 声明业务域（detsched 代码层校验前提）
+        detsched::DeclareDomain(detsched::SchedPrio::Dts::DATA_PRIO);
+        // 业务线程：订阅接入 comm + 创建线程（Worker 自包含，一步装配）
+        task.Start(*comm, "task", TaskEntry, detsched::SchedPrio::Dts::TASK_PRIO, SESSION_TYPE_DTS,
+                   kTaskSubRoutes);
+        data.Start(*comm, "data", DataEntry, detsched::SchedPrio::Dts::DATA_PRIO, SESSION_TYPE_DTS,
+                   kDataSubRoutes);
+        log.Start(*comm, "log", LogEntry, detsched::SchedPrio::Dts::LOG_PRIO, SESSION_TYPE_DTS,
+                  kLogSubRoutes);
+    }
+
+    void Stop() {
+        // 反序：先停业务线程，再销毁 detmw
+        task.Stop();
+        data.Stop();
+        log.Stop();
+        DtsMwSet(nullptr);
+        comm.reset();
+    }
 };
 
 Process& State() {
@@ -93,13 +119,15 @@ Process& State() {
     return s;
 }
 
-}  // namespace
+void InitLog() {
+    spdlog::init_thread_pool(8192, 1);
+    auto sink = std::make_shared<spdlog::sinks::stdout_color_sink_mt>();
+    auto logger = std::make_shared<spdlog::async_logger>(
+        "dts", sink, spdlog::thread_pool(), spdlog::async_overflow_policy::overrun_oldest);
+    spdlog::set_default_logger(logger);
+    spdlog::set_level(spdlog::level::info);
+}
 
-// 停止标志：Run 的常驻循环等待它（cv 唤醒，兼容信号回调与测试线程调用）
-namespace {
-std::mutex g_runMutex;
-std::condition_variable g_runCv;
-bool g_stopped = false;
 }  // namespace
 
 void Stop() {
@@ -116,45 +144,28 @@ int Run(const char* cfg_path) {
         return 1;
     }
 
-    // 1. 日志（异步 spdlog）
-    spdlog::init_thread_pool(8192, 1);
-    auto sink = std::make_shared<spdlog::sinks::stdout_color_sink_mt>();
-    auto logger = std::make_shared<spdlog::async_logger>(
-        "dts", sink, spdlog::thread_pool(), spdlog::async_overflow_policy::overrun_oldest);
-    spdlog::set_default_logger(logger);
-    spdlog::set_level(spdlog::level::info);
+    // 1. 日志
+    InitLog();
 
-    // 2. 通信站点（detmw v2：Communicator 加载配置 + 建 participant + 预建 writer）
+    // 2. 通信站点（detmw v2：加载配置 + 建 participant + 预建 writer）
     auto& p = State();
     p.comm = std::make_unique<detmw::Communicator>(cfg_path);
     DtsMwSet(p.comm.get());
 
-    // 3. 声明业务域（detsched 代码层校验前提）
-    detsched::DeclareDomain(detsched::SchedPrio::Dts::DATA_PRIO);
-
-    // 4. 业务线程：订阅接入 comm + 创建线程（Worker 自包含，一步装配）
-    p.task.Start(*p.comm, "task", TaskEntry, detsched::SchedPrio::Dts::TASK_PRIO, SESSION_TYPE_DTS,
-                 kTaskSubRoutes);
-    p.data.Start(*p.comm, "data", DataEntry, detsched::SchedPrio::Dts::DATA_PRIO, SESSION_TYPE_DTS,
-                 kDataSubRoutes);
-    p.log.Start(*p.comm, "log", LogEntry, detsched::SchedPrio::Dts::LOG_PRIO, SESSION_TYPE_DTS,
-                kLogSubRoutes);
+    // 3. 业务线程装配
+    p.Start();
 
     spdlog::info("[Run] up (cfg={})", cfg_path);
 
-    // 常驻运行：等待 Stop() 置停止标志后退出下电（cv 唤醒，不依赖信号）
+    // 4. 常驻运行：等待 Stop() 置停止标志后退出（cv 唤醒）
     {
         std::unique_lock<std::mutex> lk(g_runMutex);
         g_runCv.wait(lk, [] { return g_stopped; });
     }
 
-    // 反序下电：先停业务线程，再销毁 detmw，最后停日志线程池
-    p.task.Stop();
-    p.data.Stop();
-    p.log.Stop();
-    DtsMwSet(nullptr);
-    p.comm.reset();
-    spdlog::shutdown();
+    // 5. 反序下电
+    p.Stop();
+    spdlog::shutdown();  // 最后停异步日志线程池，刷空队列
     return 0;
 }
 
