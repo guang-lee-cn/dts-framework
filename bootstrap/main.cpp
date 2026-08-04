@@ -3,7 +3,7 @@
 
 #include <unistd.h>
 
-#include "dts_startup.h"
+#include "startup.h"
 
 using namespace dts;
 
@@ -21,7 +21,7 @@ int main(int argc, char* argv[]) {
     std::signal(SIGINT, OnSignal);
     std::signal(SIGTERM, OnSignal);
 
-    if (dts_startup(argc > 1 ? argv[1] : nullptr) != 0) {
+    if (StartUp(argc > 1 ? argv[1] : nullptr) != 0) {
         std::printf("=== dts startup failed ===\n");
         return 1;
     }
@@ -31,7 +31,7 @@ int main(int argc, char* argv[]) {
         pause();  // 挂起等信号，信号处理置 g_running=0 后退出
     }
 
-    dts_startup_shutdown();
+    ShutDown();
     std::printf("=== done ===\n");
     return 0;
 }

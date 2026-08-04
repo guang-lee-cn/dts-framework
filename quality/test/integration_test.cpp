@@ -2,7 +2,7 @@
 #include <cstdio>
 #include <thread>
 
-#include "dts_startup.h"
+#include "startup.h"
 #include "kafka_mock.h"
 #include "scheduler_mock.h"
 #include "spa_mock.h"
@@ -14,7 +14,7 @@ int main() {
     std::printf("=== integration test start ===\n");
 
     // 单进程上电：用 cpf 生成配置（含静态发现），mock 对端为空（stub），验证启动/优雅退出
-    dts_startup(DTS_TEST_CFG);
+    StartUp(DTS_TEST_CFG);
 
     KafkaMock kafka;
     kafka.Start();
@@ -25,7 +25,7 @@ int main() {
 
     std::this_thread::sleep_for(std::chrono::seconds(3));
 
-    dts_startup_shutdown();
+    ShutDown();
     std::printf("=== integration test done ===\n");
     return 0;
 }
