@@ -112,17 +112,15 @@ int main(int argc, char** argv) {
     const uint32_t expect = static_cast<uint32_t>(std::strtoul(argv[3], nullptr, 10));
     const char* out_path = argv[2];
 
-    detmw_handle* h = detmw_init(argv[1]);
-    if (h == nullptr) return 1;
+    detmw::Communicator comm(argv[1]);
 
-    if (detmw_subscribe(h, SESSION_TYPE_DTS, SESSION_INST_DATA, MSG_ID_DATA_TASK_ACTIVE, OnMsg2,
-                        nullptr) != 0 ||
-        detmw_subscribe(h, SESSION_TYPE_DTS, SESSION_INST_DATA, MSG_ID_REPORT, OnMsg4, nullptr) !=
-            0 ||
-        detmw_subscribe(h, SESSION_TYPE_DTS, SESSION_INST_LOG, MSG_ID_LOG_REPORT, OnLog, nullptr) !=
-            0) {
+    if (comm.subscribe(detmw::endpoint{SESSION_TYPE_DTS, SESSION_INST_DATA, MSG_ID_DATA_TASK_ACTIVE},
+                       OnMsg2, nullptr) != 0 ||
+        comm.subscribe(detmw::endpoint{SESSION_TYPE_DTS, SESSION_INST_DATA, MSG_ID_REPORT},
+                       OnMsg4, nullptr) != 0 ||
+        comm.subscribe(detmw::endpoint{SESSION_TYPE_DTS, SESSION_INST_LOG, MSG_ID_LOG_REPORT},
+                       OnLog, nullptr) != 0) {
         std::printf("[perf-sub] subscribe failed\n");
-        detmw_destroy(h);
         return 1;
     }
 
@@ -135,7 +133,7 @@ int main(int argc, char** argv) {
                 g_done.load() ? 1 : 0, static_cast<unsigned long long>(NowUs()));
     std::this_thread::sleep_for(std::chrono::seconds(2));  // 排空可靠投递在途包
 
-    detmw_destroy(h);
+    // comm RAII 析构销毁 detmw
 
     std::vector<uint64_t> latTask, latData;
     {

@@ -1,40 +1,63 @@
 #pragma once
 
-#include <stddef.h>
-#include <stdint.h>
+#include <cstdint>
+#include <cstring>
+#include <functional>
+#include <string>
 
-#ifdef __cplusplus
-extern "C" {
-#endif
+namespace detmw {
 
-// detmw —— 统一进程间通信中间件（C ABI 稳定，底层传输可插拔）
-// 配置驱动：detmw_init 加载进程生成配置 JSON（gen_detmw.py 产物），
-//   含 domain / process / topics（session+msgId+role+thread+端点ID），
-//   传输层据此建 participant（EDP=STATIC 静态发现）+ 各端点显式 entityId。
-// 通信标识规则：DDS topic = sessionType_sessionInst_msgId（确定性映射）。
+// 统一接收回调：消息到达时触发（SEDP 匹配完成后常态入口）
+using recv_fn = void (*)(void* user_ctx, const uint8_t* data, uint32_t len);
 
-typedef struct detmw_handle detmw_handle;
+// 统一寻址键：发布方与订阅方共享同一 endpoint，键即约定
+struct endpoint {
+    std::string session_type;
+    std::string session_inst;
+    uint32_t msg_id;
 
-// 统一接收回调：对齐 itran (session+msgId) → fn(data,len)
-typedef void (*detmw_recv_fn)(void* user_ctx, const uint8_t* data, uint32_t len);
+    bool operator==(const endpoint& o) const {
+        return msg_id == o.msg_id && session_type == o.session_type &&
+               session_inst == o.session_inst;
+    }
+    std::string ToString() const {
+        return session_type + "." + session_inst + "." + std::to_string(msg_id);
+    }
+};
 
-// 生命周期：加载进程生成配置，建 participant（静态发现）+ 预建发布端 writer
-detmw_handle* detmw_init(const char* cfg_path);
-void detmw_destroy(detmw_handle* h);
+struct endpoint_hash {
+    size_t operator()(const endpoint& e) const {
+        size_t h1 = std::hash<std::string>{}(e.session_type);
+        size_t h2 = std::hash<std::string>{}(e.session_inst);
+        return h1 ^ (h2 << 1) ^ (static_cast<size_t>(e.msg_id) << 3);
+    }
+};
 
-// 订阅：按 (sessionType+sessionInst+msgId) 查配置 subscribe 端点并绑定回调
-int detmw_subscribe(detmw_handle* h,
-                    const char* session_type, const char* session_inst, uint32_t msg_id,
-                    detmw_recv_fn fn, void* user_ctx);
+// 通信站点：每进程一个，承载订阅/发布端点。构造=init，析构=destroy。
+// 底层传输经 TransportInterface 隔离，可替换。
+class Communicator {
+public:
+    explicit Communicator(const char* cfg_path);
+    ~Communicator();
 
-// 发布：按 (sessionType+sessionInst+msgId) 查配置 publish 端点（writer 已预建）
-int detmw_publish(detmw_handle* h,
-                  const char* session_type, const char* session_inst, uint32_t msg_id,
-                  const uint8_t* data, uint32_t len);
+    Communicator(const Communicator&) = delete;
+    Communicator& operator=(const Communicator&) = delete;
 
-// 调试：dump 配置端点
-int detmw_dump(detmw_handle* h, char* buf, size_t cap);
+    // 收：按 endpoint 建 reader + 注册常态回调（SEDP 内部完成）
+    int subscribe(const endpoint& src, recv_fn fn, void* ctx);
 
-#ifdef __cplusplus
-}
-#endif
+    // 发（进程外）：走 DDS，序列化 + 传输
+    int publish_external(const endpoint& dst, const uint8_t* data, uint32_t len);
+
+    // 发（进程内）：目标为本进程某线程，mailbox 直通免序列化（取 dst.msg_id 投递）
+    int publish_internal(const endpoint& dst, const uint8_t* data, uint32_t len);
+
+    // 调试：dump 配置端点
+    int dump(char* buf, size_t cap) const;
+
+private:
+    struct Impl;
+    Impl* m_impl;
+};
+
+}  // namespace detmw

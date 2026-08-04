@@ -44,8 +44,7 @@ int main(int argc, char** argv) {
     const uint32_t burstEvery = (argc >= 9) ? std::strtoul(argv[8], nullptr, 10) : 10;
     const uint32_t burstLen = (argc >= 10) ? std::strtoul(argv[9], nullptr, 10) : 20;
 
-    detmw_handle* h = detmw_init(argv[1]);
-    if (h == nullptr) return 1;
+    detmw::Communicator comm(argv[1]);
 
     std::printf("[perf-gen] waiting %ds for static discovery...\n", waitSecs);
     std::this_thread::sleep_for(std::chrono::seconds(waitSecs));
@@ -62,8 +61,8 @@ int main(int argc, char** argv) {
         ta->taskId = static_cast<uint16_t>(seq & 0xFFFF);
         PerfSetSeq(pkt.data(), done ? kPerfDoneSeq : seq);
         PerfSetTs(pkt.data(), NowUs());
-        int rc = detmw_publish(h, SESSION_TYPE_DTS, sessionInst, msgId, pkt.data(),
-                               static_cast<uint32_t>(pktSize));
+        int rc = comm.publish_external(detmw::endpoint{SESSION_TYPE_DTS, sessionInst, msgId},
+                                       pkt.data(), static_cast<uint32_t>(pktSize));
         lastRc = rc;
         if (rc != 0) fail++;
         sent++;
@@ -84,8 +83,8 @@ int main(int argc, char** argv) {
     ta->taskId = 0xFFFF;
     PerfSetSeq(pkt.data(), kPerfDoneSeq);
     PerfSetTs(pkt.data(), NowUs());
-    int doneRc = detmw_publish(h, SESSION_TYPE_DTS, sessionInst, msgId, pkt.data(),
-                               static_cast<uint32_t>(pktSize));
+    int doneRc = comm.publish_external(detmw::endpoint{SESSION_TYPE_DTS, sessionInst, msgId},
+                                       pkt.data(), static_cast<uint32_t>(pktSize));
     uint64_t t1 = NowUs();
 
     double secs = static_cast<double>(t1 - t0) / 1e6;
@@ -95,6 +94,5 @@ int main(int argc, char** argv) {
                 static_cast<double>(sent) * pktSize / 1e6 / secs, fail, lastRc, doneRc);
 
     std::this_thread::sleep_for(std::chrono::seconds(2));  // 等可靠投递排空
-    detmw_destroy(h);
-    return 0;
+    return 0;  // comm RAII 析构销毁 detmw
 }

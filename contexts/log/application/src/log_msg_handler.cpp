@@ -15,7 +15,9 @@ void OnCollect(const uint8_t* msg, uint32_t len) {
     spdlog::info("[log:handler] collect msg received ({} bytes), ack", len);
     // log 线程 pub 能力：收到采集即回抛（perf：log 段收发验证）
     if (DtsMw() != nullptr && msg != nullptr) {
-        detmw_publish(DtsMw(), SESSION_TYPE_DTS, SESSION_INST_LOG, MSG_ID_LOG_REPORT, msg, len);
+        DtsMw()->publish_external(detmw::endpoint{SESSION_TYPE_DTS, SESSION_INST_LOG,
+                                                  MSG_ID_LOG_REPORT},
+                                  msg, len);
     }
 }
 

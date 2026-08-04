@@ -64,7 +64,9 @@ void DataMsgHandlerDispatch(ThreadStatus status, uint32_t msgId, const uint8_t* 
         OnTaskActive(msg, len);
         // 数据上报通路：data 线程收 task 激活即回抛（perf 链路：任务下发 -> 数据上报）
         if (DtsMw() != nullptr) {
-            detmw_publish(DtsMw(), SESSION_TYPE_DTS, SESSION_INST_DATA, MSG_ID_REPORT, msg, len);
+            DtsMw()->publish_external(detmw::endpoint{SESSION_TYPE_DTS, SESSION_INST_DATA,
+                                                      MSG_ID_REPORT},
+                                      msg, len);
         }
     } else if (msgId == MSG_ID_AGENT_DATA) {
         OnAgentData(msg, len);
@@ -82,8 +84,9 @@ void DataMsgHandlerTimerReport() {
         wire.insert(wire.end(), reinterpret_cast<const uint8_t*>(&b.header),
                     reinterpret_cast<const uint8_t*>(&b.header) + sizeof(b.header));
         wire.insert(wire.end(), b.payload.begin(), b.payload.end());
-        detmw_publish(DtsMw(), SESSION_TYPE_DTS, SESSION_INST_DATA, MSG_ID_REPORT, wire.data(),
-                      static_cast<uint32_t>(wire.size()));
+        DtsMw()->publish_external(detmw::endpoint{SESSION_TYPE_DTS, SESSION_INST_DATA,
+                                                  MSG_ID_REPORT},
+                                  wire.data(), static_cast<uint32_t>(wire.size()));
     }
 }
 

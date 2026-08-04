@@ -16,8 +16,7 @@ int main(int argc, char** argv) {
         std::printf("usage: %s <spa.json>\n", argv[0]);
         return 1;
     }
-    detmw_handle* h = detmw_init(argv[1]);
-    if (h == nullptr) return 1;
+    detmw::Communicator comm(argv[1]);
 
     std::printf("[spa] waiting for static discovery...\n");
     std::this_thread::sleep_for(std::chrono::seconds(3));
@@ -42,11 +41,11 @@ int main(int argc, char** argv) {
     std::memcpy(frame.data() + hdr.entries[1].offset, &ue, sizeof(ue));
 
     std::printf("[spa] sending %zu bytes to data thread (msg3)\n", frame.size());
-    int rc = detmw_publish(h, SESSION_TYPE_DTS, SESSION_INST_DATA, MSG_ID_AGENT_DATA,
-                           frame.data(), static_cast<uint32_t>(frame.size()));
+    int rc = comm.publish_external(detmw::endpoint{SESSION_TYPE_DTS, SESSION_INST_DATA,
+                                                   MSG_ID_AGENT_DATA},
+                                   frame.data(), static_cast<uint32_t>(frame.size()));
     std::this_thread::sleep_for(std::chrono::seconds(1));
 
-    detmw_destroy(h);
     std::printf("[spa] %s\n", rc == 0 ? "PASS" : "FAIL");
     return rc == 0 ? 0 : 1;
 }

@@ -1,6 +1,7 @@
 #include "startup.h"
 
 #include <memory>
+#include <string>
 #include <vector>
 
 #include <spdlog/async.h>
@@ -29,67 +30,65 @@ namespace dts {
 
 namespace {
 
-// detmw 路由订阅：消息 -> 线程 mailbox（detmw_recv_fn 是函数指针，用 user_ctx 传路由上下文）
-struct RouteCtx {
-    ThreadCtx* thread;
-    uint32_t msgId;
+// 订阅：detmw 端点 + 所属线程 mailbox。注册在 comm 上，回调投递到 mailbox。
+struct Subscription {
+    detmw::endpoint ep;
+    ThreadCtx* thread;  // 目标线程 mailbox（回调投递目标）
 };
 
+// detmw 回调：消息 -> 目标线程 mailbox（跨线程投递，mailbox 自身线程安全）
 void OnRouteMsg(void* userCtx, const uint8_t* data, uint32_t len) {
-    auto* rc = static_cast<RouteCtx*>(userCtx);
-    if (rc == nullptr || rc->thread == nullptr || (data == nullptr && len > 0)) {
+    auto* sub = static_cast<Subscription*>(userCtx);
+    if (sub == nullptr || sub->thread == nullptr || (data == nullptr && len > 0)) {
         spdlog::warn("[StartUp] route ctx invalid");
         return;
     }
-    rc->thread->m_mailbox.Send(rc->msgId, data, len);
+    sub->thread->m_mailbox.Send(sub->ep.msg_id, data, len);
 }
 
-// 单个业务线程：上下文 + detsched 句柄成对（StartUp 创建 / ShutDown 反序回收）
+// 业务线程：上下文 + detsched 句柄 + 订阅集合（自包含，构造建好/析构回收）
 struct Worker {
+    std::string name;
     ThreadCtx ctx;
     detsched::ThreadHandle h = nullptr;
+    std::vector<std::unique_ptr<Subscription>> subs;  // 本线程负责的订阅
+
+    template <typename RouteArray, size_t N>
+    void Start(detmw::Communicator& comm, const char* threadName, EntryFn entry, int prio,
+               const char* session_type, const RouteArray (&routes)[N]) {
+        name = threadName;
+        ctx.Init(name, entry);
+        for (size_t i = 0; i < N; i++) {
+            auto sub = std::make_unique<Subscription>();
+            sub->ep = detmw::endpoint{session_type, routes[i].sessionInst, routes[i].msgId};
+            sub->thread = &ctx;
+            if (comm.subscribe(sub->ep, OnRouteMsg, sub.get()) == 0) {
+                subs.push_back(std::move(sub));
+            } else {
+                spdlog::error("[StartUp] {} subscribe failed: {}", name, sub->ep.ToString());
+            }
+        }
+        h = detsched::CreateThread(name, prio, ThreadEntry, &ctx);
+    }
+
+    void Stop() {
+        ctx.RequestStop();
+        detsched::DestroyThread(h);
+        subs.clear();
+    }
 };
 
-// 组合根常驻资源（进程生命周期，StartUp 装配 / ShutDown 反序释放）
-struct AppState {
-    std::unique_ptr<detmw_handle, decltype(&detmw_destroy)> mw{nullptr, &detmw_destroy};
+// 组合根：通信站点 + 三个业务线程（Process 门面语义）
+struct Process {
+    std::unique_ptr<detmw::Communicator> comm;
     Worker task;
     Worker data;
     Worker log;
-    std::vector<std::unique_ptr<RouteCtx>> routes;  // 订阅上下文，进程常驻但所有权明确
 };
 
-AppState& State() {
-    static AppState s;
+Process& State() {
+    static Process s;
     return s;
-}
-
-void InitLog() {
-    // 异步日志：队列满丢最旧（overrun_oldest），实时线程不被日志 I/O 阻塞
-    spdlog::init_thread_pool(8192, 1);
-    auto sink = std::make_shared<spdlog::sinks::stdout_color_sink_mt>();
-    auto logger = std::make_shared<spdlog::async_logger>(
-        "dts", sink, spdlog::thread_pool(), spdlog::async_overflow_policy::overrun_oldest);
-    spdlog::set_default_logger(logger);
-    spdlog::set_level(spdlog::level::info);
-}
-
-void RouteToThread(ThreadCtx& ctx, const char* inst, uint32_t msgId) {
-    auto& st = State();
-    st.routes.push_back(std::make_unique<RouteCtx>(RouteCtx{&ctx, msgId}));
-    if (detmw_subscribe(st.mw.get(), SESSION_TYPE_DTS, inst, msgId, OnRouteMsg,
-                        st.routes.back().get()) != 0) {
-        st.routes.pop_back();  // 订阅失败，不保留悬挂 RouteCtx
-        spdlog::error("[StartUp] subscribe failed: {} {}", inst, msgId);
-    }
-}
-
-// 按线程遍历生成 Sub 路由表注册订阅（替代手写 MSG_ID）
-template <typename RouteArray, size_t N>
-void RegisterSubRoutes(ThreadCtx& ctx, const RouteArray (&routes)[N]) {
-    for (size_t i = 0; i < N; i++) {
-        RouteToThread(ctx, routes[i].sessionInst, routes[i].msgId);
-    }
 }
 
 }  // namespace
@@ -101,57 +100,43 @@ int StartUp(const char* cfg_path) {
     }
 
     // 1. 日志（异步 spdlog）
-    InitLog();
+    spdlog::init_thread_pool(8192, 1);
+    auto sink = std::make_shared<spdlog::sinks::stdout_color_sink_mt>();
+    auto logger = std::make_shared<spdlog::async_logger>(
+        "dts", sink, spdlog::thread_pool(), spdlog::async_overflow_policy::overrun_oldest);
+    spdlog::set_default_logger(logger);
+    spdlog::set_level(spdlog::level::info);
 
-    // 2. 通信中间件（detmw，加载分进程生成配置 JSON）
-    auto& st = State();
-    st.mw.reset(detmw_init(cfg_path));
-    if (!st.mw) {
-        spdlog::error("[StartUp] detmw init failed");
-        return 1;
-    }
-    DtsMwSet(st.mw.get());
+    // 2. 通信站点（detmw v2：Communicator 加载配置 + 建 participant + 预建 writer）
+    auto& p = State();
+    p.comm = std::make_unique<detmw::Communicator>(cfg_path);
+    DtsMwSet(p.comm.get());
 
-    // 3. 声明业务域（detsched 代码层校验前提）+ 静态路由注册
+    // 3. 声明业务域（detsched 代码层校验前提）
     detsched::DeclareDomain(detsched::SchedPrio::Dts::DATA_PRIO);
-    RegisterSubRoutes(st.task.ctx, kTaskSubRoutes);
-    RegisterSubRoutes(st.data.ctx, kDataSubRoutes);
-    RegisterSubRoutes(st.log.ctx, kLogSubRoutes);
 
-    // 4. 创建业务线程（ThreadCtx + detsched 线程引擎，spec 表驱动）
-    struct WorkerSpec {
-        const char* name;
-        int prio;
-        EntryFn entry;
-        Worker* out;
-    };
-    const WorkerSpec specs[] = {
-        {"task", detsched::SchedPrio::Dts::TASK_PRIO, TaskEntry, &st.task},
-        {"data", detsched::SchedPrio::Dts::DATA_PRIO, DataEntry, &st.data},
-        {"log",  detsched::SchedPrio::Dts::LOG_PRIO,  LogEntry,  &st.log},
-    };
-    for (const auto& s : specs) {
-        s.out->ctx.Init(s.name, s.entry);
-        s.out->h = detsched::CreateThread(s.name, s.prio, ThreadEntry, &s.out->ctx);
-    }
+    // 4. 业务线程：订阅接入 comm + 创建线程（Worker 自包含，一步装配）
+    p.task.Start(*p.comm, "task", TaskEntry, detsched::SchedPrio::Dts::TASK_PRIO, SESSION_TYPE_DTS,
+                 kTaskSubRoutes);
+    p.data.Start(*p.comm, "data", DataEntry, detsched::SchedPrio::Dts::DATA_PRIO, SESSION_TYPE_DTS,
+                 kDataSubRoutes);
+    p.log.Start(*p.comm, "log", LogEntry, detsched::SchedPrio::Dts::LOG_PRIO, SESSION_TYPE_DTS,
+                kLogSubRoutes);
 
     spdlog::info("[StartUp] up (cfg={})", cfg_path);
     return 0;
 }
 
 void ShutDown() {
-    auto& st = State();
+    auto& p = State();
     // 反序：先停业务线程，再销毁 detmw
-    for (Worker* w : {&st.task, &st.data, &st.log}) {
-        w->ctx.RequestStop();
-        detsched::DestroyThread(w->h);
-    }
+    p.task.Stop();
+    p.data.Stop();
+    p.log.Stop();
 
     DtsMwSet(nullptr);
-    st.mw.reset();
-    st.routes.clear();
-
-    spdlog::shutdown();  // 停异步日志线程池，刷空队列（spdlog 自建后台线程，须显式回收）
+    p.comm.reset();
+    spdlog::shutdown();  // 停异步日志线程池，刷空队列
 }
 
 }  // namespace dts

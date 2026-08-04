@@ -33,9 +33,11 @@ void OnTaskActive(const uint8_t* msg, uint32_t len) {
     }
     DefaultTaskStrategy().OnTaskCreated(cfg);
 
-    // 经 detmw 投递给 data 线程（对齐 itran 回调模型）
+    // 经 detmw 投递给 data 线程（进程内直通，免序列化；对齐 itran 回调模型）
     if (DtsMw() != nullptr) {
-        detmw_publish(DtsMw(), SESSION_TYPE_DTS, SESSION_INST_DATA, MSG_ID_DATA_TASK_ACTIVE, msg, len);
+        DtsMw()->publish_internal(detmw::endpoint{SESSION_TYPE_DTS, SESSION_INST_DATA,
+                                                 MSG_ID_DATA_TASK_ACTIVE},
+                                  msg, len);
     }
 }
 
@@ -52,9 +54,11 @@ void OnTaskConfig(const uint8_t* msg, uint32_t len) {
         }
     }
     spdlog::info("[task:handler] config parsed (taskId@{} / {}B)", keyPos, len);
-    // 响应：回传 JSON（反向 32K 通路同样压）
+    // 响应：回传 JSON 给 nfoam（进程外，走 DDS；反向 32K 通路同样压）
     if (DtsMw() != nullptr) {
-        detmw_publish(DtsMw(), SESSION_TYPE_DTS, SESSION_INST_TASK, MSG_ID_TASK_RESPONSE, msg, len);
+        DtsMw()->publish_external(detmw::endpoint{SESSION_TYPE_DTS, SESSION_INST_TASK,
+                                                  MSG_ID_TASK_RESPONSE},
+                                  msg, len);
     }
 }
 

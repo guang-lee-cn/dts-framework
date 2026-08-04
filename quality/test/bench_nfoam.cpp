@@ -71,13 +71,11 @@ int main(int argc, char** argv) {
     const size_t size = (argc >= 4) ? std::strtoul(argv[3], nullptr, 10) : kPerfPacketSize;
     const uint32_t delayUs = (argc >= 5) ? std::strtoul(argv[4], nullptr, 10) : 0;
 
-    detmw_handle* h = detmw_init(argv[1]);
-    if (h == nullptr) return 1;
+    detmw::Communicator comm(argv[1]);
 
-    if (detmw_subscribe(h, SESSION_TYPE_DTS, SESSION_INST_TASK, MSG_ID_TASK_RESPONSE, OnResp,
-                        nullptr) != 0) {
+    if (comm.subscribe(detmw::endpoint{SESSION_TYPE_DTS, SESSION_INST_TASK, MSG_ID_TASK_RESPONSE},
+                       OnResp, nullptr) != 0) {
         std::printf("[nfoam] subscribe response failed\n");
-        detmw_destroy(h);
         return 1;
     }
 
@@ -88,16 +86,16 @@ int main(int argc, char** argv) {
     uint64_t t0 = NowUs();
     for (uint32_t i = 0; i < count; i++) {
         PerfBuildConfigJson(pkt.data(), size, i & 0xFFFF, i, NowUs());
-        detmw_publish(h, SESSION_TYPE_DTS, SESSION_INST_TASK, MSG_ID_TASK_CONFIG, pkt.data(),
-                      static_cast<uint32_t>(size));
+        comm.publish_external(detmw::endpoint{SESSION_TYPE_DTS, SESSION_INST_TASK, MSG_ID_TASK_CONFIG},
+                              pkt.data(), static_cast<uint32_t>(size));
         if (delayUs > 0) {
             std::this_thread::sleep_for(std::chrono::microseconds(delayUs));
         }
     }
     // DONE 标记（同样走 task 响应）
     PerfBuildConfigJson(pkt.data(), size, 0xFFFF, kPerfDoneSeq, NowUs());
-    detmw_publish(h, SESSION_TYPE_DTS, SESSION_INST_TASK, MSG_ID_TASK_CONFIG, pkt.data(),
-                  static_cast<uint32_t>(size));
+    comm.publish_external(detmw::endpoint{SESSION_TYPE_DTS, SESSION_INST_TASK, MSG_ID_TASK_CONFIG},
+                          pkt.data(), static_cast<uint32_t>(size));
     uint64_t t1 = NowUs();
 
     for (int i = 0; i < 150 && !g_done.load(); i++) {  // 15s 超时
@@ -105,7 +103,7 @@ int main(int argc, char** argv) {
     }
     std::this_thread::sleep_for(std::chrono::seconds(2));  // 排空在途
 
-    detmw_destroy(h);
+    // comm RAII 析构销毁 detmw
 
     double sendSecs = static_cast<double>(t1 - t0) / 1e6;
     uint64_t resp = g_resp.load();

@@ -3,14 +3,14 @@
 namespace dts {
 
 namespace {
-detmw_handle* g_mw = nullptr;
+detmw::Communicator* g_mw = nullptr;
 }  // namespace
 
-detmw_handle* DtsMw() {
+detmw::Communicator* DtsMw() {
     return g_mw;
 }
 
-void DtsMwSet(detmw_handle* h) {
+void DtsMwSet(detmw::Communicator* h) {
     g_mw = h;
 }
 

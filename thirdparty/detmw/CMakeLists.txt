@@ -1,6 +1,6 @@
-# detmw —— 统一进程间通信中间件（C ABI，Fast-DDS 传输，cJSON 配置解析）
+# detmw —— 统一进程间通信中间件（v2：全 C++，Communicator + TransportInterface 隔离底层）
 add_library(detmw STATIC
-  src/detmw.c
+  src/detmw.cpp
   src/detmw_fastdds.cpp
   src/detmw_log.cpp
   third_party/cJSON.c)

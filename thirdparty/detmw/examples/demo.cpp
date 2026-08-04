@@ -9,6 +9,7 @@
 #include "detmw.h"
 
 using namespace std::chrono_literals;
+using namespace detmw;
 
 void on_recv(void* ctx, const uint8_t* data, uint32_t len) {
     (void)ctx;
@@ -25,25 +26,25 @@ int main(int argc, char** argv) {
         return 1;
     }
     bool is_pub = std::strcmp(argv[1], "pub") == 0;
-    detmw_handle* h = detmw_init(argv[2]);
-    if (!h) return 1;
+    Communicator comm(argv[2]);
 
     if (is_pub) {
         // 等 RTPS 发现握手完成（首条不丢验证：发现后可靠投递全收）
         std::this_thread::sleep_for(2s);
+        const endpoint dst{"DTS", "data", 100};
         for (int i = 0; i < 5; i++) {
             char msg[64];
             int n = std::snprintf(msg, sizeof(msg), "hello-%d", i);
-            detmw_publish(h, "DTS", "data", 100, reinterpret_cast<const uint8_t*>(msg),
-                          static_cast<uint32_t>(n));
+            comm.publish_external(dst, reinterpret_cast<const uint8_t*>(msg),
+                                  static_cast<uint32_t>(n));
             std::this_thread::sleep_for(500ms);
         }
         std::this_thread::sleep_for(1s);  // 等可靠投递 ack 完成再退出
     } else {
-        detmw_subscribe(h, "DTS", "data", 100, on_recv, nullptr);
+        const endpoint src{"DTS", "data", 100};
+        comm.subscribe(src, on_recv, nullptr);
         std::this_thread::sleep_for(12s);
     }
 
-    detmw_destroy(h);
     return 0;
 }
