@@ -37,7 +37,14 @@ std::mutex g_runMutex;
 std::condition_variable g_runCv;
 bool g_stopped = false;
 
-// ---- 订阅：detmw 端点 + 所属线程 mailbox ----
+// ---- 业务线程：纯线程（上下文 + detsched 句柄），只管"跑"，不持有订阅 ----
+struct Worker {
+    std::string name;
+    ThreadCtx ctx;
+    detsched::ThreadHandle h = nullptr;
+};
+
+// ---- 订阅：detmw 端点 + 目标线程 mailbox。独立概念，Process 统一持有 ----
 struct Subscription {
     detmw::endpoint ep;
     ThreadCtx* thread;  // 目标线程 mailbox（回调投递目标）
@@ -53,64 +60,62 @@ void OnRouteMsg(void* userCtx, const uint8_t* data, uint32_t len) {
     sub->thread->m_mailbox.Send(sub->ep.msg_id, data, len);
 }
 
-// ---- 业务线程：上下文 + detsched 句柄 + 订阅集合（自包含）----
-struct Worker {
-    std::string name;
-    ThreadCtx ctx;
-    detsched::ThreadHandle h = nullptr;
-    std::vector<std::unique_ptr<Subscription>> subs;  // 本线程负责的订阅
-
-    template <typename RouteArray, size_t N>
-    void Start(detmw::Communicator& comm, const char* threadName, EntryFn entry, int prio,
-               const char* session_type, const RouteArray (&routes)[N]) {
-        name = threadName;
-        ctx.Init(name, entry);
-        for (size_t i = 0; i < N; i++) {
-            auto sub = std::make_unique<Subscription>();
-            sub->ep = detmw::endpoint{session_type, routes[i].sessionInst, routes[i].msgId};
-            sub->thread = &ctx;
-            if (comm.subscribe(sub->ep, OnRouteMsg, sub.get()) == 0) {
-                subs.push_back(std::move(sub));
-            } else {
-                spdlog::error("[Run] {} subscribe failed: {}", name, sub->ep.ToString());
-            }
-        }
-        h = detsched::CreateThread(name, prio, ThreadEntry, &ctx);
-    }
-
-    void Stop() {
-        ctx.RequestStop();
-        detsched::DestroyThread(h);
-        subs.clear();
-    }
-};
-
-// ---- 组合根：通信站点 + 三个业务线程 ----
+// ---- 组合根：通信站点 + 业务线程 + 订阅集合，统一装配 ----
 struct Process {
     std::unique_ptr<detmw::Communicator> comm;
     Worker task;
     Worker data;
     Worker log;
+    std::vector<std::unique_ptr<Subscription>> subs;  // 全部订阅（注册在 comm 上）
 
+    // 装配：声明业务域 -> 建线程 -> 注册订阅
     void Start() {
-        // 声明业务域（detsched 代码层校验前提）
         detsched::DeclareDomain(detsched::SchedPrio::Dts::DATA_PRIO);
-        // 业务线程：订阅接入 comm + 创建线程（Worker 自包含，一步装配）
-        task.Start(*comm, "task", TaskEntry, detsched::SchedPrio::Dts::TASK_PRIO, SESSION_TYPE_DTS,
-                   kTaskSubRoutes);
-        data.Start(*comm, "data", DataEntry, detsched::SchedPrio::Dts::DATA_PRIO, SESSION_TYPE_DTS,
-                   kDataSubRoutes);
-        log.Start(*comm, "log", LogEntry, detsched::SchedPrio::Dts::LOG_PRIO, SESSION_TYPE_DTS,
-                  kLogSubRoutes);
+
+        StartWorker(task, "task", TaskEntry, detsched::SchedPrio::Dts::TASK_PRIO);
+        StartWorker(data, "data", DataEntry, detsched::SchedPrio::Dts::DATA_PRIO);
+        StartWorker(log, "log", LogEntry, detsched::SchedPrio::Dts::LOG_PRIO);
+
+        RegisterSubRoutes(task.ctx, SESSION_TYPE_DTS, kTaskSubRoutes);
+        RegisterSubRoutes(data.ctx, SESSION_TYPE_DTS, kDataSubRoutes);
+        RegisterSubRoutes(log.ctx, SESSION_TYPE_DTS, kLogSubRoutes);
     }
 
+    // 下电：先停业务线程，再销毁 detmw（订阅随 comm 释放）
     void Stop() {
-        // 反序：先停业务线程，再销毁 detmw
-        task.Stop();
-        data.Stop();
-        log.Stop();
+        StopWorker(task);
+        StopWorker(data);
+        StopWorker(log);
         DtsMwSet(nullptr);
         comm.reset();
+        subs.clear();
+    }
+
+private:
+    void StartWorker(Worker& w, const char* name, EntryFn entry, int prio) {
+        w.name = name;
+        w.ctx.Init(name, entry);
+        w.h = detsched::CreateThread(name, prio, ThreadEntry, &w.ctx);
+    }
+
+    void StopWorker(Worker& w) {
+        w.ctx.RequestStop();
+        detsched::DestroyThread(w.h);
+    }
+
+    template <typename RouteArray, size_t N>
+    void RegisterSubRoutes(ThreadCtx& thread, const char* session_type,
+                           const RouteArray (&routes)[N]) {
+        for (size_t i = 0; i < N; i++) {
+            auto sub = std::make_unique<Subscription>();
+            sub->ep = detmw::endpoint{session_type, routes[i].sessionInst, routes[i].msgId};
+            sub->thread = &thread;
+            if (comm->subscribe(sub->ep, OnRouteMsg, sub.get()) == 0) {
+                subs.push_back(std::move(sub));
+            } else {
+                spdlog::error("[Run] subscribe failed: {}", sub->ep.ToString());
+            }
+        }
     }
 };
 
@@ -152,7 +157,7 @@ int Run(const char* cfg_path) {
     p.comm = std::make_unique<detmw::Communicator>(cfg_path);
     DtsMwSet(p.comm.get());
 
-    // 3. 业务线程装配
+    // 3. 业务线程 + 订阅装配
     p.Start();
 
     spdlog::info("[Run] up (cfg={})", cfg_path);
