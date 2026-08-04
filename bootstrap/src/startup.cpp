@@ -150,6 +150,8 @@ void ShutDown() {
     DtsMwSet(nullptr);
     st.mw.reset();
     st.routes.clear();
+
+    spdlog::shutdown();  // 停异步日志线程池，刷空队列（spdlog 自建后台线程，须显式回收）
 }
 
 }  // namespace dts
