@@ -1,0 +1,9 @@
+{
+    "process": "nfoam",
+    "domain": 1,
+    "peers": [ "dts-test", "spa" ],
+    "topics": [
+        { "session_type": "DTS", "session_inst": "task", "msg_id": 1, "role": "publish",   "thread": "task" },
+        { "session_type": "DTS", "session_inst": "data", "msg_id": 2, "role": "subscribe", "thread": "data" }
+    ]
+}

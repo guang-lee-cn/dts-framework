@@ -1,0 +1,10 @@
+{
+    "process": "perf-sub",
+    "domain": 3,
+    "peers": [ "perf-gen", "perf-dts" ],
+    "topics": [
+        { "session_type": "DTS", "session_inst": "data", "msg_id": 2, "role": "subscribe", "thread": "data" },
+        { "session_type": "DTS", "session_inst": "data", "msg_id": 4, "role": "subscribe", "thread": "data" },
+        { "session_type": "DTS", "session_inst": "log",  "msg_id": 6, "role": "subscribe", "thread": "log" }
+    ]
+}

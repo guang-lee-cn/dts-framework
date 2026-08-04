@@ -1,0 +1,45 @@
+{
+    "process": "perf-gen",
+    "domain": 3,
+    "peers": [
+        "perf-dts",
+        "perf-sub"
+    ],
+    "topics": [
+        {
+            "session_type": "DTS",
+            "session_inst": "task",
+            "msg_id": 1,
+            "role": "publish",
+            "thread": "task"
+        },
+        {
+            "session_type": "DTS",
+            "session_inst": "log",
+            "msg_id": 5,
+            "role": "publish",
+            "thread": "log"
+        },
+        {
+            "session_type": "DTS",
+            "session_inst": "task",
+            "msg_id": 7,
+            "role": "publish",
+            "thread": "task"
+        },
+        {
+            "session_type": "DTS",
+            "session_inst": "task",
+            "msg_id": 8,
+            "role": "subscribe",
+            "thread": "task"
+        },
+        {
+            "session_type": "DTS",
+            "session_inst": "data",
+            "msg_id": 3,
+            "role": "publish",
+            "thread": "data"
+        }
+    ]
+}

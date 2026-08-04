@@ -1,0 +1,8 @@
+{
+    "process": "demo-sub",
+    "domain": 7,
+    "peers": [ "demo-pub" ],
+    "topics": [
+        { "session_type": "DTS", "session_inst": "data", "msg_id": 100, "role": "subscribe", "thread": "data" }
+    ]
+}

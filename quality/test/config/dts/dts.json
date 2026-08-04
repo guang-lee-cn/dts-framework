@@ -1,0 +1,73 @@
+{
+    "process": "dts-test",
+    "domain": 1,
+    "peers": [
+        "nfoam",
+        "spa"
+    ],
+    "topics": [
+        {
+            "session_type": "DTS",
+            "session_inst": "task",
+            "msg_id": 1,
+            "role": "subscribe",
+            "thread": "task"
+        },
+        {
+            "session_type": "DTS",
+            "session_inst": "data",
+            "msg_id": 2,
+            "role": "publish",
+            "thread": "task"
+        },
+        {
+            "session_type": "DTS",
+            "session_inst": "data",
+            "msg_id": 2,
+            "role": "subscribe",
+            "thread": "data"
+        },
+        {
+            "session_type": "DTS",
+            "session_inst": "data",
+            "msg_id": 3,
+            "role": "subscribe",
+            "thread": "data"
+        },
+        {
+            "session_type": "DTS",
+            "session_inst": "data",
+            "msg_id": 4,
+            "role": "publish",
+            "thread": "data"
+        },
+        {
+            "session_type": "DTS",
+            "session_inst": "log",
+            "msg_id": 5,
+            "role": "subscribe",
+            "thread": "log"
+        },
+        {
+            "session_type": "DTS",
+            "session_inst": "log",
+            "msg_id": 6,
+            "role": "publish",
+            "thread": "log"
+        },
+        {
+            "session_type": "DTS",
+            "session_inst": "task",
+            "msg_id": 7,
+            "role": "subscribe",
+            "thread": "task"
+        },
+        {
+            "session_type": "DTS",
+            "session_inst": "task",
+            "msg_id": 8,
+            "role": "publish",
+            "thread": "task"
+        }
+    ]
+}

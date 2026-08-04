@@ -1,0 +1,18 @@
+{
+    "system_reserve": { "start": 90, "end": 99 },
+    "domains": [
+        { "name": "CORE", "start": 75, "end": 89, "policy": "SCHED_FIFO" },
+        { "name": "DATA", "start": 60, "end": 74, "policy": "SCHED_FIFO" },
+        { "name": "APP",  "start": 45, "end": 59, "policy": "SCHED_RR" },
+        {
+            "name": "DTS", "start": 32, "end": 34, "policy": "SCHED_RR",
+            "roles": {
+                "DATA_PRIO": 34,
+                "TASK_PRIO": 33,
+                "LOG_PRIO":  32
+            }
+        },
+        { "name": "BKG", "start": 15, "end": 29, "policy": "SCHED_OTHER" },
+        { "name": "DEF", "start": 1,  "end": 14, "policy": "SCHED_OTHER" }
+    ]
+}

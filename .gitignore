@@ -1,0 +1,7 @@
+build/
+build-*/
+*.o
+*.out
+__pycache__/
+.vscode/
+.claude/
