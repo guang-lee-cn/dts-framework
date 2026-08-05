@@ -6,6 +6,7 @@
 #include <string>
 #include <vector>
 
+#include "console.h"
 #include "data_msg_handler.h"
 #include "detmw.h"
 #include "dts_data_entry.h"
@@ -67,6 +68,20 @@ struct Subscription {
     ThreadCtx* thread;  // 目标线程 mailbox（回调投递目标）
 };
 
+// console socket 路径：cfg 文件名派生（cpf-dts.json -> /tmp/dts-cpf-dts.sock），多实例不冲突
+std::string MakeConsoleSockPath(const char* cfg_path) {
+    std::string name = cfg_path;
+    const size_t slash = name.find_last_of('/');
+    if (slash != std::string::npos) {
+        name = name.substr(slash + 1);
+    }
+    const size_t dot = name.rfind(".json");
+    if (dot != std::string::npos) {
+        name = name.substr(0, dot);
+    }
+    return "/tmp/dts-" + name + ".sock";
+}
+
 // detmw 回调：消息 -> 目标线程 mailbox（跨线程投递，mailbox 自身线程安全）
 void OnRouteMsg(void* userCtx, const uint8_t* data, uint32_t len) {
     auto* sub = static_cast<Subscription*>(userCtx);
@@ -91,8 +106,9 @@ struct Process {
     // 阻塞等待停止请求（Run 主线程常驻）；返回即收到停止
     void WaitStop() { stop.Wait(); }
 
-    // 装配：声明业务域 -> 建线程 -> 注册订阅。返回 false = 致命装配失败（域/线程）
-    bool Start() {
+    // 装配：声明业务域 -> 建线程 -> 注册订阅 -> console/control 运维面。
+    // 返回 false = 致命装配失败（域/线程）；console/control 失败仅降级（进程仍可跑业务）
+    bool Start(const char* console_sock) {
         bool ok = true;
         if (!detsched::DeclareDomain(detsched::SchedPrio::Dts::DATA_PRIO)) {
             dts::log::Error("[Run] DeclareDomain failed");
@@ -105,13 +121,22 @@ struct Process {
         RegisterSubRoutes(task.ctx, SESSION_TYPE_DTS, kTaskSubRoutes);
         RegisterSubRoutes(data.ctx, SESSION_TYPE_DTS, kDataSubRoutes);
         RegisterSubRoutes(log.ctx, SESSION_TYPE_DTS, kLogSubRoutes);
+
+        if (dts::console_start(console_sock) != 0) {
+            dts::log::Error("[Run] console start failed (sock={})", console_sock);
+        }
+        if (dts::control_start() != 0) {
+            dts::log::Error("[Run] control start failed");
+        }
         return ok;
     }
 
-    // 下电：先停业务线程，再销毁 detmw（订阅随 comm 释放）。
+    // 下电：先停 console/control（反序），再停业务线程，最后销毁 detmw。
     // 前提：FastDDS delete_participant 阻塞等待接收线程退出，在途 OnRouteMsg 回调必已结束，
     // 故 comm.reset() 后 subs.clear() 无 use-after-free（换传输实现需重新验证该假设）
     void Stop() {
+        dts::control_stop();
+        dts::console_stop();
         StopWorker(task);
         StopWorker(data);
         StopWorker(log);
@@ -183,8 +208,8 @@ int Run(const char* cfg_path) {
     }
     DtsMwSet(p.comm.get());
 
-    // 3. 业务线程 + 订阅装配
-    if (!p.Start()) {
+    // 3. 业务线程 + 订阅 + console/control 装配
+    if (!p.Start(MakeConsoleSockPath(cfg_path).c_str())) {
         dts::log::Error("[Run] thread assembly failed");
         p.Stop();
         dts::log::Shutdown();

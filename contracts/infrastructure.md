@@ -9,15 +9,15 @@
 infrastructure/
   ├── mailbox.h / mw.h / thread_ctx.h / defs.h   ← 现有（文件名去 dts_ 前缀，符号在 dts:: 内）
   ├── log.h / log.cpp                            ← 日志门面 dts::log（target dts_log，2026-08-05 落地）
-  ├── console/                                  ← 新增：socket 监听（人类 cmd 入口）
-  ├── control/                                  ← 新增：运维指令执行（CommandExecutor）
-  └── logging/                                  ← 规划中：TsRotatingSink 文件落地
+  ├── ctl.h / ctl.cpp                            ← 命令表 CommandRegistry + Execute（2026-08-05 落地）
+  ├── console.h / console.cpp                    ← console 监听线程 + control 执行线程（2026-08-05 落地）
+  └── logging/                                  ← 规划中：TsRotatingSink 文件落地（已含于 log.cpp）
 ```
 
 **日志依赖方向**：spdlog ← dts_log ← {detmw, detsched, infrastructure, agent}。业务代码只依赖
 `dts::log`，不得直接 include `<spdlog/*>` 或调用 spdlog API。
 
-## 2. 控制面：CommandExecutor（D5/D6，核心复用点）
+## 2. 控制面：CommandExecutor（D5/D6，核心复用点）✅ 已落地 2026-08-05
 
 **职责**：唯一命令执行处。console 人类入口与 detmw 控制消息共用。
 
@@ -55,13 +55,13 @@ int Execute(const std::string& line, std::string& out);
 - 查询类命令只读；配置类命令（日志级别）用 spdlog 线程安全接口，不加锁（D6）
 - 命令表驱动：新增命令 = 表加一行 + 一个函数，不碰调度/传输
 
-## 3. 运维线程（6.1 图 CON / CTRL）
+## 3. 运维线程（6.1 图 CON / CTRL）✅ 已落地 2026-08-05
 
 ```cpp
 namespace dts {
 
 // console：socket 监听线程（人类 cmd 入口），阻塞 I/O，不执行命令
-// 收到命令 -> 投递 control 线程
+// 收到命令 -> 投递 control 线程。AF_UNIX 长连接会话：一行一命令，响应以 '\x00' 结尾
 int console_start(const char* sock_path);   // 创建监听线程；返回 0 成功
 void console_stop();
 
