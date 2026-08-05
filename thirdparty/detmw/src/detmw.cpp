@@ -1,7 +1,7 @@
 #include "detmw.h"
 #include "detmw_transport.h"
 
-#include <spdlog/spdlog.h>
+#include "log.h"
 
 #include <cJSON.h>
 
@@ -44,14 +44,14 @@ struct Communicator::Impl {
 
 Communicator::Communicator(const char* cfg_path) : m_impl(new Impl()) {
     if (cfg_path == nullptr) {
-        spdlog::error("[detmw] cfg_path is null");
+        dts::log::Error("[detmw] cfg_path is null");
         return;
     }
 
     // 1. 解析配置 JSON：process / domain / topics
     FILE* fp = fopen(cfg_path, "rb");
     if (fp == nullptr) {
-        spdlog::error("[detmw] open config failed: {}", cfg_path);
+        dts::log::Error("[detmw] open config failed: {}", cfg_path);
         return;
     }
     fseek(fp, 0, SEEK_END);
@@ -59,7 +59,7 @@ Communicator::Communicator(const char* cfg_path) : m_impl(new Impl()) {
     fseek(fp, 0, SEEK_SET);
     if (size <= 0 || size > 1 << 20) {
         fclose(fp);
-        spdlog::error("[detmw] config size invalid: {}", cfg_path);
+        dts::log::Error("[detmw] config size invalid: {}", cfg_path);
         return;
     }
     std::string buf(static_cast<size_t>(size), '\0');
@@ -69,7 +69,7 @@ Communicator::Communicator(const char* cfg_path) : m_impl(new Impl()) {
 
     cJSON* root = cJSON_Parse(buf.c_str());
     if (root == nullptr) {
-        spdlog::error("[detmw] config parse failed: {}", cfg_path);
+        dts::log::Error("[detmw] config parse failed: {}", cfg_path);
         return;
     }
 
@@ -77,7 +77,7 @@ Communicator::Communicator(const char* cfg_path) : m_impl(new Impl()) {
     cJSON* domain = cJSON_GetObjectItem(root, "domain");
     cJSON* topics = cJSON_GetObjectItem(root, "topics");
     if (process == nullptr || !cJSON_IsNumber(domain) || !cJSON_IsArray(topics)) {
-        spdlog::error("[detmw] config missing process/domain/topics: {}", cfg_path);
+        dts::log::Error("[detmw] config missing process/domain/topics: {}", cfg_path);
         cJSON_Delete(root);
         return;
     }
@@ -94,7 +94,7 @@ Communicator::Communicator(const char* cfg_path) : m_impl(new Impl()) {
         cJSON* mid = cJSON_GetObjectItem(t, "msg_id");
         const char* role = cJSON_GetStringValue(cJSON_GetObjectItem(t, "role"));
         if (st == nullptr || si == nullptr || !cJSON_IsNumber(mid) || role == nullptr) {
-            spdlog::error("[detmw] topic[{}] invalid in config", i);
+            dts::log::Error("[detmw] topic[{}] invalid in config", i);
             continue;
         }
         ConfigEntry e;
@@ -108,7 +108,7 @@ Communicator::Communicator(const char* cfg_path) : m_impl(new Impl()) {
     cJSON_Delete(root);
 
     if (m_impl->config.empty()) {
-        spdlog::error("[detmw] no topics loaded from config");
+        dts::log::Error("[detmw] no topics loaded from config");
         return;
     }
 
@@ -124,7 +124,7 @@ Communicator::Communicator(const char* cfg_path) : m_impl(new Impl()) {
                 m_impl->transport->CreateWriter(e.ep);
             }
         }
-        spdlog::info("[detmw] init ok (process={} domain={} topics={})", m_impl->process,
+        dts::log::Info("[detmw] init ok (process={} domain={} topics={})", m_impl->process,
                      m_impl->domain_id, m_impl->config.size());
     }
 }
@@ -135,7 +135,7 @@ Communicator::~Communicator() {
 
 int Communicator::subscribe(const endpoint& src, recv_fn fn, void* ctx) {
     if (!m_impl->transport) {
-        spdlog::error("[detmw] subscribe: transport not ready");
+        dts::log::Error("[detmw] subscribe: transport not ready");
         return -1;
     }
     return m_impl->transport->CreateReader(src, fn, ctx);
@@ -143,7 +143,7 @@ int Communicator::subscribe(const endpoint& src, recv_fn fn, void* ctx) {
 
 int Communicator::publish_external(const endpoint& dst, const uint8_t* data, uint32_t len) {
     if (!m_impl->transport) {
-        spdlog::error("[detmw] publish_external: transport not ready");
+        dts::log::Error("[detmw] publish_external: transport not ready");
         return -1;
     }
     return m_impl->transport->Send(dst, data, len);
@@ -153,7 +153,7 @@ int Communicator::publish_internal(const endpoint& dst, const uint8_t* data, uin
     // 进程内直通：目标为本进程某线程。detmw 不做本地映射（调用方已选 API），
     // 当前走 transport；D7/D8 的 mailbox 直通实现随后续阶段落地，此处保留接口形态。
     if (!m_impl->transport) {
-        spdlog::error("[detmw] publish_internal: transport not ready");
+        dts::log::Error("[detmw] publish_internal: transport not ready");
         return -1;
     }
     return m_impl->transport->Send(dst, data, len);

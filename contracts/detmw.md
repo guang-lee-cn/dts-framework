@@ -68,6 +68,7 @@ int detmw_publish_inner(detmw_handle* h, uint32_t msg_id,
 - 仅用于"目标在本进程某线程"的消息；进程外一律用 `detmw_publish`
 - 接收侧无感知：消息同样进目标线程 mailbox（与 DDS 消息无差别）
 - 调用方负责选对 API，detmw 不做本地/外部映射判断
+- **接收统一入口**：无论 `publish_external` / `publish_internal`，目标线程都经订阅回调（bootstrap 的 OnRouteMsg 路由）进 mailbox，全系统唯一投递点。mailbox 直通只允许是 transport 内部的投递优化（命中本进程订阅者时免 DDS 序列化），不得在业务代码旁路订阅回调另开投递入口
 
 ## 4. 控制通道（D2）
 

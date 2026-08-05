@@ -2,7 +2,6 @@
 add_library(detmw STATIC
   src/detmw.cpp
   src/detmw_fastdds.cpp
-  src/detmw_log.cpp
   third_party/cJSON.c)
 target_include_directories(detmw PUBLIC include)
 target_include_directories(detmw PRIVATE third_party)
@@ -12,12 +11,9 @@ set_target_properties(detmw PROPERTIES C_STANDARD 11 CXX_STANDARD 17)
 set(FASTDDS_PREFIX /usr/local)
 target_include_directories(detmw PRIVATE ${FASTDDS_PREFIX}/include)
 find_package(Threads REQUIRED)
-find_package(PkgConfig REQUIRED)
-pkg_check_modules(SPDLOG REQUIRED spdlog)
-target_include_directories(detmw PUBLIC ${SPDLOG_INCLUDE_DIRS})
 target_link_libraries(detmw PUBLIC
   ${FASTDDS_PREFIX}/lib/libfastdds.so /usr/local/lib/libfastcdr.so
-  ${SPDLOG_LIBRARIES} Threads::Threads)
+  dts_log Threads::Threads)
 
 # 2 进程 demo：pub/sub 各跑一个实例（配置驱动 + 静态发现，产物 build/generated/detmw-demo）
 set(DETMW_DEMO_CFG_DIR ${CMAKE_CURRENT_SOURCE_DIR}/examples/demo)

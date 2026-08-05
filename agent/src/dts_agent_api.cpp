@@ -3,9 +3,10 @@
 #include <atomic>
 #include <chrono>
 #include <cstdint>
-#include <cstdio>
 #include <thread>
 #include <vector>
+
+#include "log.h"
 
 namespace dts {
 
@@ -25,8 +26,7 @@ static void agentReaderLoop(AgentImpl* self) {
         std::this_thread::sleep_for(std::chrono::milliseconds(self->cfg.readPeriodMs));
         uint32_t n = self->cfg.pingpong->ReadAndFlip(buf.data(), static_cast<uint32_t>(buf.size()));
         if (n == 0) continue;
-        std::printf("[agent] read %u bytes after flip, publish key=0x%llx\n", n,
-                    static_cast<unsigned long long>(self->cfg.outKey));
+        log::Info("[agent] read {} bytes after flip, publish key={:#x}", n, self->cfg.outKey);
         if (self->cfg.publish != nullptr) {
             self->cfg.publish(self->cfg.outKey, buf.data(), n, self->cfg.pubCtx);
         }

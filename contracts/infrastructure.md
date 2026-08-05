@@ -8,10 +8,14 @@
 ```
 infrastructure/
   ├── mailbox.h / mw.h / thread_ctx.h / defs.h   ← 现有（文件名去 dts_ 前缀，符号在 dts:: 内）
+  ├── log.h / log.cpp                            ← 日志门面 dts::log（target dts_log，2026-08-05 落地）
   ├── console/                                  ← 新增：socket 监听（人类 cmd 入口）
   ├── control/                                  ← 新增：运维指令执行（CommandExecutor）
-  └── logging/                                  ← 新增：日志门面 + TsRotatingSink
+  └── logging/                                  ← 规划中：TsRotatingSink 文件落地
 ```
+
+**日志依赖方向**：spdlog ← dts_log ← {detmw, detsched, infrastructure, agent}。业务代码只依赖
+`dts::log`，不得直接 include `<spdlog/*>` 或调用 spdlog API。
 
 ## 2. 控制面：CommandExecutor（D5/D6，核心复用点）
 
@@ -95,27 +99,31 @@ void control_stop();
 ```cpp
 namespace dts::log {
 
-// 日志门面：按当前线程名路由到对应 logger。业务代码统一调用，无感。
-void Log(Level lvl, const char* fmt, ...);
+enum class Level { TRACE, DEBUG, INFO, WARN, ERROR, CRITICAL };
+
+// 日志门面：变参模板转发 spdlog，保留 fmt 编译期格式检查。业务代码统一调用，无感。
+template <typename... Args>
+void Log(Level lvl, spdlog::format_string_t<Args...> fmt, Args&&... args);
+// 分级便捷：Info / Warn / Error / Debug / Trace（签名同上，Level 固定）
 
 // 配置（来自配置文件 log 段）
 struct Config {
-    size_t poolSize = 65536;        // 异步队列条数
+    size_t poolSize = 8192;         // 异步队列条数
     size_t poolThreads = 1;         // 后台消费线程数
     Level level = Level::INFO;
     bool console = true;            // 终端输出
     struct File {
-        bool enable = true;
-        std::string dir;            // "/var/log/dts"
-        std::string namePattern;    // "dts_{}-%Y%m%d%H%M%S"  {} = 线程名
-        size_t maxSizeMb = 5;       // 单文件上限
-        size_t maxTotalMb = 5120;   // 总量上限（满态删一增一）
+        bool enable = true;                  // 文件输出（TsRotatingSink，已落地）
+        std::string dir = "/var/log/dts";    // 日志目录（不存在则建）
+        std::string namePattern = "dts_{}-%Y%m%d%H%M%S";  // {} = 线程名，其余 strftime
+        size_t maxSizeMb = 5;                // 单文件上限，超限切新时间戳文件
+        size_t maxTotalMb = 5120;            // 总量上限（满态删一增一，含当前文件）
     } file;
 };
 
-// 初始化：按配置建每线程 logger + TsRotatingSink
-int Init(const Config& cfg);
-void Shutdown();                    // spdlog::shutdown（停线程池，刷空队列）
+// 初始化：async logger + stdout sink。幂等（重复调用仅首次生效）
+int Init(const Config& cfg = {});
+void Shutdown();                    // 停线程池，刷空队列。调用后不得再打日志（UB）
 
 // 运行时配置（console 指令入口）：改日志级别
 void SetLevel(Level lvl);
@@ -124,16 +132,18 @@ Level GetLevel();
 }  // namespace dts::log
 ```
 
-**自定义 sink 职责**（TsRotatingSink，继承 base_sink）：
-1. 文件名：`<dir>/<namePattern 展开线程名+时间戳>.log`
+**自定义 sink 职责**（TsRotatingSink，继承 base_sink，已落地）：
+1. 文件名：`<dir>/<namePattern 展开线程名+时间戳>.log`；同秒连续切分追加序号（ts-1、ts-2）消歧
 2. 单文件超 `maxSizeMb` → 切分新时间戳文件
-3. 总量超 `maxTotalMb` → 删除最旧 1 个（满态删一增一）
-4. 写入 msg（spdlog 已格式化）
+3. 总量超 `maxTotalMb` → 删除 mtime 最旧 1 个（满态删一增一；总量含当前文件，不删当前）
+4. 写入 msg（spdlog 已格式化）；目录不可写 → stderr 提示一次后静默降级（console 不受影响）
 
 **约束**：
 - 日志格式/异步队列/线程池由 spdlog 原生负责，sink 只接管文件三件事
-- 每线程一个 logger（dts_data/dts_task/dts_log），共享 1 个线程池
+- 每线程一个 logger（dts_data/dts_task/dts_log），共享 1 个线程池（当前单 default logger，逐层落地时切换）
 - 业务热路径不打日志（聚合统计，data 现状）
+- **Shutdown 时序**：日志线程池随 Run 返回回收（5b44aca）。Shutdown 后任何日志调用是 UB——
+  进程 CLI 提示（main 的 start/done/failed）不依赖日志系统，走 stdio
 
 ## 6. 版本管理
 

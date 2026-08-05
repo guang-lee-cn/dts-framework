@@ -15,6 +15,8 @@ public:
     ~SpaMock();
 
     void Start();
+    // 显式停止：停 writer + join agent 读线程。Shutdown 日志前必须先调（agent 是日志调用方）
+    void Stop();
 
 private:
     void writerLoop();

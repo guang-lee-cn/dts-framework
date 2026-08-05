@@ -1,6 +1,6 @@
 #include "detmw_transport.h"
 
-#include <spdlog/spdlog.h>
+#include "log.h"
 
 #include <fastdds/dds/core/ReturnCode.hpp>
 #include <fastdds/dds/domain/DomainParticipant.hpp>
@@ -163,7 +163,7 @@ public:
             auto udp = std::make_shared<UDPv4TransportDescriptor>();
             pqos.transport().use_builtin_transports = false;
             pqos.transport().user_transports.push_back(udp);
-            spdlog::warn("[detmw] UDP-only transport forced (DETMW_UDP_ONLY)");
+            dts::log::Warn("[detmw] UDP-only transport forced (DETMW_UDP_ONLY)");
         }
         // 发现方案：默认动态 EDP（SIMPLE）；DETMW_STATIC=1 显式切回静态 EDP
         const bool use_static = std::getenv("DETMW_STATIC") != nullptr;
@@ -174,16 +174,16 @@ public:
             std::string xml_uri = std::string("file://") + static_xml_path;
             dc.static_edp_xml_config(xml_uri.c_str());
             if (factory->check_xml_static_discovery(xml_uri) != RETCODE_OK) {
-                spdlog::error("[detmw] static discovery xml invalid: {}", static_xml_path);
+                dts::log::Error("[detmw] static discovery xml invalid: {}", static_xml_path);
                 return;
             }
         } else {
-            spdlog::info("[detmw] dynamic EDP (SIMPLE)");
+            dts::log::Info("[detmw] dynamic EDP (SIMPLE)");
         }
 
         m_state->participant = factory->create_participant(domain_id, pqos);
         if (!m_state->participant) {
-            spdlog::error("[detmw] participant create failed (domain={})", domain_id);
+            dts::log::Error("[detmw] participant create failed (domain={})", domain_id);
             return;
         }
         m_state->type = new BytesType();
@@ -191,7 +191,7 @@ public:
         m_state->typeSupport.register_type(m_state->participant);
         m_state->publisher = m_state->participant->create_publisher(PUBLISHER_QOS_DEFAULT);
         m_state->subscriber = m_state->participant->create_subscriber(SUBSCRIBER_QOS_DEFAULT);
-        spdlog::info("[detmw] participant up (name={} static_edp={})", process_name, static_xml_path);
+        dts::log::Info("[detmw] participant up (name={} static_edp={})", process_name, static_xml_path);
     }
 
     ~FastDdsTransport() override {
@@ -201,10 +201,10 @@ public:
         }
         // 诊断：reader 累计接收 + writer 原始发布次数
         for (size_t i = 0; i < m_state->readers.size(); ++i) {
-            spdlog::info("[detmw] reader[{}] recv_total={}", i, m_state->listeners[i]->recvCount.load());
+            dts::log::Info("[detmw] reader[{}] recv_total={}", i, m_state->listeners[i]->recvCount.load());
         }
         for (const auto& kv : m_state->writeCount) {
-            spdlog::info("[detmw] writer[{}] write_total={}", kv.first, kv.second);
+            dts::log::Info("[detmw] writer[{}] write_total={}", kv.first, kv.second);
         }
         DomainParticipantFactory::get_instance()->delete_participant(m_state->participant);
         // typeSupport 值成员（shared_ptr）析构自动释放 m_state->type
@@ -213,13 +213,13 @@ public:
 
     int CreateReader(const endpoint& ep, recv_fn fn, void* ctx) override {
         if (!m_state->participant) {
-            spdlog::error("[detmw] CreateReader: participant not ready");
+            dts::log::Error("[detmw] CreateReader: participant not ready");
             return -1;
         }
         const std::string topic = MakeTopic(ep);
         Topic* t = FindOrCreateTopic(m_state, topic);
         if (!t) {
-            spdlog::error("[detmw] topic create failed: {}", topic);
+            dts::log::Error("[detmw] topic create failed: {}", topic);
             return -1;
         }
         auto listener = std::make_unique<RecvListener>(*m_state->type, fn, ctx);
@@ -229,18 +229,18 @@ public:
         rqos.history().depth = 1000;  // 加深在途容量（不动可靠 timing，避免丢包）
         DataReader* reader = m_state->subscriber->create_datareader(t, rqos, listener.get());
         if (!reader) {
-            spdlog::error("[detmw] reader create failed: {}", topic);
+            dts::log::Error("[detmw] reader create failed: {}", topic);
             return -1;
         }
         m_state->listeners.push_back(std::move(listener));
         m_state->readers.push_back(reader);
-        spdlog::info("[detmw] subscribed topic={}", topic);
+        dts::log::Info("[detmw] subscribed topic={}", topic);
         return 0;
     }
 
     int CreateWriter(const endpoint& ep) override {
         if (!m_state->participant) {
-            spdlog::error("[detmw] CreateWriter: participant not ready");
+            dts::log::Error("[detmw] CreateWriter: participant not ready");
             return -1;
         }
         const std::string topic = MakeTopic(ep);
@@ -249,7 +249,7 @@ public:
         }
         Topic* t = FindOrCreateTopic(m_state, topic);
         if (!t) {
-            spdlog::error("[detmw] topic create failed: {}", topic);
+            dts::log::Error("[detmw] topic create failed: {}", topic);
             return -1;
         }
         DataWriterQos wqos = DATAWRITER_QOS_DEFAULT;
@@ -258,33 +258,33 @@ public:
         wqos.history().depth = 1000;
         DataWriter* w = m_state->publisher->create_datawriter(t, wqos);
         if (!w) {
-            spdlog::error("[detmw] writer create failed: {}", topic);
+            dts::log::Error("[detmw] writer create failed: {}", topic);
             return -1;
         }
         m_state->writers.push_back(w);
-        spdlog::info("[detmw] writer up topic={}", topic);
+        dts::log::Info("[detmw] writer up topic={}", topic);
         return 0;
     }
 
     int Send(const endpoint& ep, const uint8_t* data, uint32_t len) override {
         if (!m_state->participant) {
-            spdlog::error("[detmw] Send: participant not ready");
+            dts::log::Error("[detmw] Send: participant not ready");
             return -1;
         }
         const std::string topic = MakeTopic(ep);
         DataWriter* w = FindWriter(m_state, topic);
         if (!w) {
-            spdlog::error("[detmw] writer not precreated: {}", topic);
+            dts::log::Error("[detmw] writer not precreated: {}", topic);
             return -1;
         }
         std::vector<uint8_t> payload(data, data + len);
         ReturnCode_t rc = w->write(&payload);
         if (rc != RETCODE_OK) {
-            spdlog::error("[detmw] write failed: {}", topic);
+            dts::log::Error("[detmw] write failed: {}", topic);
             return -1;
         }
         m_state->writeCount[topic]++;
-        spdlog::info("[detmw] published topic={} len={}", topic, len);
+        dts::log::Info("[detmw] published topic={} len={}", topic, len);
         return 0;
     }
 

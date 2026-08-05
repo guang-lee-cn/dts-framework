@@ -1,6 +1,6 @@
 #include "thread_factory.h"
 
-#include <spdlog/spdlog.h>
+#include "log.h"
 
 #include <pthread.h>
 #include <sched.h>
@@ -42,11 +42,11 @@ ThreadFactory& ThreadFactory::Instance() {
 bool ThreadFactory::DeclareDomain(int prioLevel) {
     int segIdx = SegmentIndex(prioLevel);
     if (segIdx < 0) {
-        spdlog::error("[detsched] DeclareDomain: prio {} no domain", prioLevel);
+        dts::log::Error("[detsched] DeclareDomain: prio {} no domain", prioLevel);
         return false;
     }
     m_domains[segIdx] = true;
-    spdlog::info("[detsched] domain {} declared (prio={})", KSCHED_SEGMENTS[segIdx].name,
+    dts::log::Info("[detsched] domain {} declared (prio={})", KSCHED_SEGMENTS[segIdx].name,
                 prioLevel);
     return true;
 }
@@ -69,11 +69,11 @@ ThreadHandle ThreadFactory::CreateThread(const std::string& name, int prioLevel,
                                          const ThreadParams* params) {
     int segIdx = SegmentIndex(prioLevel);
     if (segIdx < 0) {
-        spdlog::error("[detsched] {}: prio {} no domain", name.c_str(), prioLevel);
+        dts::log::Error("[detsched] {}: prio {} no domain", name.c_str(), prioLevel);
         return nullptr;
     }
     if (!m_domains[segIdx]) {
-        spdlog::error("[detsched] {}: domain {} not declared", name.c_str(),
+        dts::log::Error("[detsched] {}: domain {} not declared", name.c_str(),
                      KSCHED_SEGMENTS[segIdx].name);
         return nullptr;
     }
@@ -86,7 +86,7 @@ ThreadHandle ThreadFactory::CreateThread(const std::string& name, int prioLevel,
     ThreadFn entry = params ? params->fn : fn;
     void* entryArg = params ? params->arg : fnArg;
     if (prio < seg.minPrio || prio > seg.maxPrio) {
-        spdlog::error("[detsched] {}: prio {} out of [{},{}] for domain {}", name.c_str(),
+        dts::log::Error("[detsched] {}: prio {} out of [{},{}] for domain {}", name.c_str(),
                      prio, seg.minPrio, seg.maxPrio, seg.name);
         return nullptr;
     }
@@ -96,7 +96,7 @@ ThreadHandle ThreadFactory::CreateThread(const std::string& name, int prioLevel,
         std::lock_guard<std::mutex> lk(m_regMutex);
         for (const auto* it : m_registry) {
             if (it->m_name == name) {
-                spdlog::error("[detsched] {}: duplicate thread name", name.c_str());
+                dts::log::Error("[detsched] {}: duplicate thread name", name.c_str());
             }
         }
     }
@@ -136,7 +136,7 @@ ThreadHandle ThreadFactory::CreateThread(const std::string& name, int prioLevel,
     if (rc == EPERM && policy != SCHED_OTHER) {
         // RT 权限不足（容器/非 root 无 CAP_SYS_NICE）：降级普通调度，保证 dev/test 可跑；
         // 生产有 RT 权限时仍走 RT，确定性语义不变
-        spdlog::warn("[detsched] {}: RT create failed ({}), fallback to SCHED_OTHER",
+        dts::log::Warn("[detsched] {}: RT create failed ({}), fallback to SCHED_OTHER",
                      name.c_str(), std::strerror(rc));
         pthread_attr_destroy(&attr);
         pthread_attr_init(&attr);
@@ -155,7 +155,7 @@ ThreadHandle ThreadFactory::CreateThread(const std::string& name, int prioLevel,
     }
     pthread_attr_destroy(&attr);
     if (rc != 0) {
-        spdlog::error("[detsched] {}: pthread_create failed ({})", name.c_str(),
+        dts::log::Error("[detsched] {}: pthread_create failed ({})", name.c_str(),
                      std::strerror(rc));
         delete h;
         return nullptr;
@@ -166,14 +166,14 @@ ThreadHandle ThreadFactory::CreateThread(const std::string& name, int prioLevel,
     if (affinity >= 0) {
         long ncpu = sysconf(_SC_NPROCESSORS_ONLN);
         if (affinity >= ncpu) {
-            spdlog::error("[detsched] {}: affinity {} out of range (ncpu={})",
+            dts::log::Error("[detsched] {}: affinity {} out of range (ncpu={})",
                          name.c_str(), affinity, ncpu);
         } else {
             cpu_set_t set;
             CPU_ZERO(&set);
             CPU_SET(affinity, &set);
             if (pthread_setaffinity_np(h->m_tid, sizeof(set), &set) != 0) {
-                spdlog::error("[detsched] {}: setaffinity({}) failed", name.c_str(),
+                dts::log::Error("[detsched] {}: setaffinity({}) failed", name.c_str(),
                              affinity);
             }
         }
@@ -186,7 +186,7 @@ ThreadHandle ThreadFactory::CreateThread(const std::string& name, int prioLevel,
         m_registry.push_back(h);
     }
 
-    spdlog::info("[detsched] {} created (domain={} prio={} policy={} cpu={} detached={})",
+    dts::log::Info("[detsched] {} created (domain={} prio={} policy={} cpu={} detached={})",
                 name.c_str(), seg.name, prio, policy, affinity, h->m_detached);
     return h;
 }
@@ -226,13 +226,13 @@ size_t ThreadFactory::QueryThreads(ThreadInfo* out, size_t cap) {
 
 void ThreadFactory::DumpThreadInfo() {
     std::lock_guard<std::mutex> lk(m_regMutex);
-    spdlog::info("[detsched] --- thread info ({}) ---", m_registry.size());
+    dts::log::Info("[detsched] --- thread info ({}) ---", m_registry.size());
     for (const auto* h : m_registry) {
-        spdlog::info("[detsched] %-16s domain=%-6s prio=%3d policy={} cpu=%3d tid={}",
+        dts::log::Info("[detsched] %-16s domain=%-6s prio=%3d policy={} cpu=%3d tid={}",
                     h->m_name.c_str(), KSCHED_SEGMENTS[h->m_segIndex].name, h->m_prio, h->m_schedPolicy,
                     h->m_cpuAffinity, static_cast<unsigned long>(h->m_tid));
     }
-    spdlog::info("[detsched] -----------------------");
+    dts::log::Info("[detsched] -----------------------");
 }
 
 }  // namespace detsched

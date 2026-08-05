@@ -26,7 +26,8 @@ int main() {
 
     std::this_thread::sleep_for(std::chrono::seconds(3));
 
-    Stop();
+    spa.Stop();  // 先停 agent 读线程（日志调用方），Run 的 Shutdown 销毁线程池前必须停干净
+    Stop();      // 停 Run（内部 p.Stop + dts::log::Shutdown）
     app.join();
 
     std::printf("=== integration test done (run_rc=%d) ===\n", runRc);

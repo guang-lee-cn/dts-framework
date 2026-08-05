@@ -11,11 +11,16 @@
 namespace dts {
 
 SpaMock::~SpaMock() {
+    Stop();
+}
+
+void SpaMock::Stop() {
     m_stop.store(true);
     if (m_writer.joinable()) {
         m_writer.join();
     }
     dts_agent_destroy(m_agent);
+    m_agent = nullptr;
 }
 
 void SpaMock::Start() {

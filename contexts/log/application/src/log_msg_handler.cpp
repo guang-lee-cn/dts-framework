@@ -1,4 +1,4 @@
-#include <spdlog/spdlog.h>
+#include "log.h"
 #include "log_msg_handler.h"
 
 #include <cstdio>
@@ -12,7 +12,7 @@ namespace {
 // 状态消息由线程体更新线程状态，业务层不处理（MSG_ID_STATUS）
 
 void OnCollect(const uint8_t* msg, uint32_t len) {
-    spdlog::info("[log:handler] collect msg received ({} bytes), ack", len);
+    dts::log::Info("[log:handler] collect msg received ({} bytes), ack", len);
     // log 线程 pub 能力：收到采集即回抛（perf：log 段收发验证）
     if (DtsMw() != nullptr && msg != nullptr) {
         DtsMw()->publish_external(detmw::endpoint{SESSION_TYPE_DTS, SESSION_INST_LOG,

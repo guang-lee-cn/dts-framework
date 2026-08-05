@@ -18,6 +18,7 @@ int main(int argc, char* argv[]) {
     std::signal(SIGTERM, OnSignal);
 
     if (Run(argc > 1 ? argv[1] : nullptr) != 0) {
+        // CLI 提示不依赖 dts::log：Run 返回时日志线程池已回收（5b44aca），此处访问会崩
         std::printf("=== dts run failed ===\n");
         return 1;
     }

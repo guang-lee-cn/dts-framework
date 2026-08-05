@@ -1,4 +1,4 @@
-#include <spdlog/spdlog.h>
+#include "log.h"
 #include "dts_thread.h"
 
 #include <chrono>
@@ -22,7 +22,7 @@ void ThreadEntry(void* arg) {
 }
 
 void ThreadRun(ThreadCtx* ctx) {
-    spdlog::info("[{}] thread up, state=IDLE, waiting for msg", ctx->m_name.c_str());
+    dts::log::Info("[{}] thread up, state=IDLE, waiting for msg", ctx->m_name.c_str());
     while (!ctx->m_stop.load()) {
         MailMsg msg;
         bool got = false;
@@ -39,7 +39,7 @@ void ThreadRun(ThreadCtx* ctx) {
         if (msg.msgId == MSG_ID_STATUS && msg.payload.size() >= sizeof(StatusMsg)) {
             const auto* st = reinterpret_cast<const StatusMsg*>(msg.payload.data());
             ctx->m_status.store(st->status);
-            spdlog::info("[{}] state -> {}", ctx->m_name.c_str(), static_cast<int>(st->status));
+            dts::log::Info("[{}] state -> {}", ctx->m_name.c_str(), static_cast<int>(st->status));
         }
 
         if (ctx->m_entry != nullptr) {

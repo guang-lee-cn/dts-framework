@@ -1,4 +1,4 @@
-#include <spdlog/spdlog.h>
+#include "log.h"
 
 #include "dts_mw.h"
 #include "task_msg_handler.h"
@@ -28,7 +28,7 @@ void OnTaskActive(const uint8_t* msg, uint32_t len) {
     cfg.dataIds.assign(m.dataIds, m.dataIds + m.dataIdCount);
 
     if (!TaskFactory().Create(TaskManager::Instance(), cfg)) {
-        spdlog::info("[task:handler] task {} rejected (duplicate or full)", cfg.taskId);
+        dts::log::Info("[task:handler] task {} rejected (duplicate or full)", cfg.taskId);
         return;
     }
     DefaultTaskStrategy().OnTaskCreated(cfg);
@@ -53,7 +53,7 @@ void OnTaskConfig(const uint8_t* msg, uint32_t len) {
             break;
         }
     }
-    spdlog::info("[task:handler] config parsed (taskId@{} / {}B)", keyPos, len);
+    dts::log::Info("[task:handler] config parsed (taskId@{} / {}B)", keyPos, len);
     // 响应：回传 JSON 给 nfoam（进程外，走 DDS；反向 32K 通路同样压）
     if (DtsMw() != nullptr) {
         DtsMw()->publish_external(detmw::endpoint{SESSION_TYPE_DTS, SESSION_INST_TASK,

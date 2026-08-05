@@ -6,10 +6,6 @@
 #include <string>
 #include <vector>
 
-#include <spdlog/async.h>
-#include <spdlog/sinks/stdout_color_sinks.h>
-#include <spdlog/spdlog.h>
-
 #include "data_msg_handler.h"
 #include "detmw.h"
 #include "dts_data_entry.h"
@@ -18,6 +14,7 @@
 #include "dts_mw.h"
 #include "dts_task_entry.h"
 #include "dts_thread.h"
+#include "log.h"
 #include "log_msg_handler.h"
 #include "platform_sched_defs.h"
 #include "task_msg_handler.h"
@@ -54,7 +51,7 @@ struct Subscription {
 void OnRouteMsg(void* userCtx, const uint8_t* data, uint32_t len) {
     auto* sub = static_cast<Subscription*>(userCtx);
     if (sub == nullptr || sub->thread == nullptr || (data == nullptr && len > 0)) {
-        spdlog::warn("[Run] route ctx invalid");
+        dts::log::Warn("[Run] route ctx invalid");
         return;
     }
     sub->thread->m_mailbox.Send(sub->ep.msg_id, data, len);
@@ -113,7 +110,7 @@ private:
             if (comm->subscribe(sub->ep, OnRouteMsg, sub.get()) == 0) {
                 subs.push_back(std::move(sub));
             } else {
-                spdlog::error("[Run] subscribe failed: {}", sub->ep.ToString());
+                dts::log::Error("[Run] subscribe failed: {}", sub->ep.ToString());
             }
         }
     }
@@ -122,15 +119,6 @@ private:
 Process& State() {
     static Process s;
     return s;
-}
-
-void InitLog() {
-    spdlog::init_thread_pool(8192, 1);
-    auto sink = std::make_shared<spdlog::sinks::stdout_color_sink_mt>();
-    auto logger = std::make_shared<spdlog::async_logger>(
-        "dts", sink, spdlog::thread_pool(), spdlog::async_overflow_policy::overrun_oldest);
-    spdlog::set_default_logger(logger);
-    spdlog::set_level(spdlog::level::info);
 }
 
 }  // namespace
@@ -144,13 +132,12 @@ void Stop() {
 }
 
 int Run(const char* cfg_path) {
+    // 1. 日志：先于一切，失败路径也要有日志出口
+    dts::log::Init();
     if (cfg_path == nullptr) {
-        spdlog::error("[Run] cfg_path is null");
+        dts::log::Error("[Run] cfg_path is null");
         return 1;
     }
-
-    // 1. 日志
-    InitLog();
 
     // 2. 通信站点（detmw v2：加载配置 + 建 participant + 预建 writer）
     auto& p = State();
@@ -160,7 +147,7 @@ int Run(const char* cfg_path) {
     // 3. 业务线程 + 订阅装配
     p.Start();
 
-    spdlog::info("[Run] up (cfg={})", cfg_path);
+    dts::log::Info("[Run] up (cfg={})", cfg_path);
 
     // 4. 常驻运行：等待 Stop() 置停止标志后退出（cv 唤醒）
     {
@@ -170,7 +157,7 @@ int Run(const char* cfg_path) {
 
     // 5. 反序下电
     p.Stop();
-    spdlog::shutdown();  // 最后停异步日志线程池，刷空队列
+    dts::log::Shutdown();  // 最后停异步日志线程池，刷空队列
     return 0;
 }
 

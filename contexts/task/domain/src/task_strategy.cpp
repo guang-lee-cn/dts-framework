@@ -1,12 +1,12 @@
 #include "task_strategy.h"
 
-#include <cstdio>
+#include "log.h"
 
 namespace dts {
 
 void DefaultTaskStrategy::OnTaskCreated(const TaskConfig& cfg) {
-    std::printf("[task:strategy] task %u type=%u created, tracking %zu dataIds\n", cfg.taskId,
-                cfg.type, cfg.dataIds.size());
+    log::Info("[task:strategy] task {} type={} created, tracking {} dataIds", cfg.taskId,
+              cfg.type, cfg.dataIds.size());
 }
 
 }  // namespace dts

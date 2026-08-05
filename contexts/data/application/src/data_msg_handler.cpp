@@ -1,4 +1,4 @@
-#include <spdlog/spdlog.h>
+#include "log.h"
 
 #include "dts_mw.h"
 #include "data_msg_handler.h"
@@ -51,7 +51,7 @@ void OnAgentData(const uint8_t* msg, uint32_t len) {
     DataFeedStat stat = DataFactory::Instance().Feed(const_cast<char*>(reinterpret_cast<const char*>(msg)),
                                                      len, g_tdmap, g_report);
     // 可观测性：data 线程收帧统计（匹配/被跟踪/丢弃）
-    spdlog::info("[data:handler] agent data feed copied={} matched={} tracked={} dropped={} cached={}",
+    dts::log::Info("[data:handler] agent data feed copied={} matched={} tracked={} dropped={} cached={}",
                  copied, stat.matchedDataIds, stat.tracked, stat.dropped, stat.cached);
 }
 

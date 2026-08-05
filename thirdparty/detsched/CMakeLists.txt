@@ -20,10 +20,7 @@ add_library(detsched STATIC
 add_dependencies(detsched sched_defs_gen)
 target_include_directories(detsched PUBLIC include)
 find_package(Threads REQUIRED)
-find_package(PkgConfig REQUIRED)
-pkg_check_modules(SPDLOG REQUIRED spdlog)
-target_include_directories(detsched PUBLIC ${SPDLOG_INCLUDE_DIRS})
-target_link_libraries(detsched PUBLIC ${SPDLOG_LIBRARIES} Threads::Threads)
+target_link_libraries(detsched PUBLIC dts_log Threads::Threads)
 
 # 骨架验证 demo（可选）
 add_executable(detsched_demo examples/demo.cpp)
