@@ -49,11 +49,16 @@ public:
     // 发（进程外）：走 DDS，序列化 + 传输
     int publish_external(const endpoint& dst, const uint8_t* data, uint32_t len);
 
-    // 发（进程内）：目标为本进程某线程，mailbox 直通免序列化（取 dst.msg_id 投递）
+    // 发（进程内）：目标为本进程某线程。当前走 transport（DDS 回环），
+    // mailbox 直通免序列化为后续优化（契约 detmw.md §3，接收仍走 OnRouteMsg 统一路由）
     int publish_internal(const endpoint& dst, const uint8_t* data, uint32_t len);
 
     // 调试：dump 配置端点
     int dump(char* buf, size_t cap) const;
+
+    // 装配状态：构造成功（配置解析 + participant 起立）返回 true。
+    // false = cfg 缺失/解析失败/transport 起不来，订阅与发布均不可用
+    bool good() const;
 
 private:
     struct Impl;

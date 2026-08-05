@@ -29,14 +29,34 @@ namespace dts {
 
 namespace {
 
-// ---- 停止标志：Run 常驻循环等待（cv 唤醒，兼容信号回调与测试线程调用）----
-std::mutex g_runMutex;
-std::condition_variable g_runCv;
-bool g_stopped = false;
+// ---- 进程生命周期停止信号：Run 常驻等待，Stop（信号回调/测试线程）请求停止 ----
+// 一次性事件：Request 后 Wait 立即返回；不防重入（Request 幂等）
+class StopSignal {
+public:
+    // 请求停止：置位 + 唤醒等待者（任意线程安全）
+    void Request() {
+        {
+            std::lock_guard<std::mutex> lk(m_mutex);
+            m_stopped = true;
+        }
+        m_cv.notify_all();
+    }
+
+    // 阻塞等待停止请求（主线程常驻）；返回即收到停止
+    void Wait() {
+        std::unique_lock<std::mutex> lk(m_mutex);
+        m_cv.wait(lk, [this] { return m_stopped; });
+    }
+
+private:
+    std::mutex m_mutex;
+    std::condition_variable m_cv;
+    bool m_stopped = false;
+};
 
 // ---- 业务线程：纯线程（上下文 + detsched 句柄），只管"跑"，不持有订阅 ----
+// 线程名由 ctx.Init 与 detsched 各自持有，此处不冗余存储
 struct Worker {
-    std::string name;
     ThreadCtx ctx;
     detsched::ThreadHandle h = nullptr;
 };
@@ -57,28 +77,40 @@ void OnRouteMsg(void* userCtx, const uint8_t* data, uint32_t len) {
     sub->thread->m_mailbox.Send(sub->ep.msg_id, data, len);
 }
 
-// ---- 组合根：通信站点 + 业务线程 + 订阅集合，统一装配 ----
+// ---- 组合根：通信站点 + 业务线程 + 订阅集合 + 生命周期停止信号，统一装配 ----
 struct Process {
+    StopSignal stop;  // 生命周期停止信号：外部 RequestStop → WaitStop 返回 → Stop() 下电
     std::unique_ptr<detmw::Communicator> comm;
     Worker task;
     Worker data;
     Worker log;
     std::vector<std::unique_ptr<Subscription>> subs;  // 全部订阅（注册在 comm 上）
 
-    // 装配：声明业务域 -> 建线程 -> 注册订阅
-    void Start() {
-        detsched::DeclareDomain(detsched::SchedPrio::Dts::DATA_PRIO);
+    // 请求停止（外部：信号回调 / 测试线程）
+    void RequestStop() { stop.Request(); }
+    // 阻塞等待停止请求（Run 主线程常驻）；返回即收到停止
+    void WaitStop() { stop.Wait(); }
 
-        StartWorker(task, "task", TaskEntry, detsched::SchedPrio::Dts::TASK_PRIO);
-        StartWorker(data, "data", DataEntry, detsched::SchedPrio::Dts::DATA_PRIO);
-        StartWorker(log, "log", LogEntry, detsched::SchedPrio::Dts::LOG_PRIO);
+    // 装配：声明业务域 -> 建线程 -> 注册订阅。返回 false = 致命装配失败（域/线程）
+    bool Start() {
+        bool ok = true;
+        if (!detsched::DeclareDomain(detsched::SchedPrio::Dts::DATA_PRIO)) {
+            dts::log::Error("[Run] DeclareDomain failed");
+            ok = false;
+        }
+        ok = StartWorker(task, "task", TaskEntry, detsched::SchedPrio::Dts::TASK_PRIO) && ok;
+        ok = StartWorker(data, "data", DataEntry, detsched::SchedPrio::Dts::DATA_PRIO) && ok;
+        ok = StartWorker(log, "log", LogEntry, detsched::SchedPrio::Dts::LOG_PRIO) && ok;
 
         RegisterSubRoutes(task.ctx, SESSION_TYPE_DTS, kTaskSubRoutes);
         RegisterSubRoutes(data.ctx, SESSION_TYPE_DTS, kDataSubRoutes);
         RegisterSubRoutes(log.ctx, SESSION_TYPE_DTS, kLogSubRoutes);
+        return ok;
     }
 
-    // 下电：先停业务线程，再销毁 detmw（订阅随 comm 释放）
+    // 下电：先停业务线程，再销毁 detmw（订阅随 comm 释放）。
+    // 前提：FastDDS delete_participant 阻塞等待接收线程退出，在途 OnRouteMsg 回调必已结束，
+    // 故 comm.reset() 后 subs.clear() 无 use-after-free（换传输实现需重新验证该假设）
     void Stop() {
         StopWorker(task);
         StopWorker(data);
@@ -89,13 +121,18 @@ struct Process {
     }
 
 private:
-    void StartWorker(Worker& w, const char* name, EntryFn entry, int prio) {
-        w.name = name;
+    bool StartWorker(Worker& w, const char* name, EntryFn entry, int prio) {
         w.ctx.Init(name, entry);
         w.h = detsched::CreateThread(name, prio, ThreadEntry, &w.ctx);
+        if (w.h == nullptr) {
+            dts::log::Error("[Run] thread create failed: {}", name);
+            return false;
+        }
+        return true;
     }
 
     void StopWorker(Worker& w) {
+        if (w.h == nullptr) return;  // 装配失败/未建的线程无需下电
         w.ctx.RequestStop();
         detsched::DestroyThread(w.h);
     }
@@ -124,11 +161,7 @@ Process& State() {
 }  // namespace
 
 void Stop() {
-    {
-        std::lock_guard<std::mutex> lk(g_runMutex);
-        g_stopped = true;
-    }
-    g_runCv.notify_all();
+    State().RequestStop();
 }
 
 int Run(const char* cfg_path) {
@@ -142,18 +175,26 @@ int Run(const char* cfg_path) {
     // 2. 通信站点（detmw v2：加载配置 + 建 participant + 预建 writer）
     auto& p = State();
     p.comm = std::make_unique<detmw::Communicator>(cfg_path);
+    if (!p.comm->good()) {
+        dts::log::Error("[Run] detmw init failed (cfg={})", cfg_path);
+        p.Stop();           // comm 析构（transport 未起，安全）
+        dts::log::Shutdown();
+        return 2;
+    }
     DtsMwSet(p.comm.get());
 
     // 3. 业务线程 + 订阅装配
-    p.Start();
+    if (!p.Start()) {
+        dts::log::Error("[Run] thread assembly failed");
+        p.Stop();
+        dts::log::Shutdown();
+        return 3;
+    }
 
     dts::log::Info("[Run] up (cfg={})", cfg_path);
 
-    // 4. 常驻运行：等待 Stop() 置停止标志后退出（cv 唤醒）
-    {
-        std::unique_lock<std::mutex> lk(g_runMutex);
-        g_runCv.wait(lk, [] { return g_stopped; });
-    }
+    // 4. 常驻运行：阻塞等待停止请求（Stop 唤醒）
+    p.WaitStop();
 
     // 5. 反序下电
     p.Stop();

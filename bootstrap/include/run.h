@@ -3,7 +3,8 @@
 namespace dts {
 
 // 进程运行（组合根）：装配 detmw + 业务线程 + console/control，常驻阻塞运行，
-// 直到 Stop() 被调用后下电退出。返回 0 正常退出；非 0 装配失败。
+// 直到 Stop() 被调用后下电退出。返回 0 正常退出；非 0 装配失败（detmw init / 线程创建）。
+// 进程生命周期内仅执行一次（State 单例 + log::Init 幂等 / Shutdown 不可逆）。
 // cfg_path：进程生成配置 JSON（gen_detmw.py 产物）。
 int Run(const char* cfg_path);
 

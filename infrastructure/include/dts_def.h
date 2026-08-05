@@ -2,7 +2,6 @@
 
 #include <cstdint>
 #include <functional>
-#include <string>
 
 namespace dts {
 
@@ -22,24 +21,7 @@ constexpr uint32_t MSG_ID_LOG_REPORT       = 0x0006;  // log -> 网管（log 线
 constexpr uint32_t MSG_ID_TASK_CONFIG      = 0x0007;  // nfoam -> task 配置变更（32K JSON）
 constexpr uint32_t MSG_ID_TASK_RESPONSE    = 0x0008;  // task -> nfoam 响应 JSON（双向收发）
 
-// ---- 会话（静态 session.json / pubsub.json 定义路由） ----
-struct SessionKey {
-    std::string type;   // sessionType
-    std::string inst;   // sessionInst
-    uint32_t msgId;
-    bool operator==(const SessionKey& o) const {
-        return type == o.type && inst == o.inst && msgId == o.msgId;
-    }
-};
-
-struct SessionKeyHash {
-    size_t operator()(const SessionKey& k) const noexcept {
-        size_t h1 = std::hash<std::string>{}(k.type);
-        size_t h2 = std::hash<std::string>{}(k.inst);
-        return h1 ^ (h2 << 1) ^ (static_cast<size_t>(k.msgId) << 3);
-    }
-};
-
+// ---- 会话：统一寻址键 detmw::endpoint（detmw.h，== / hash / ToString 内置）----
 constexpr const char* SESSION_TYPE_DTS  = "DTS";
 constexpr const char* SESSION_INST_TASK = "task";
 constexpr const char* SESSION_INST_DATA = "data";

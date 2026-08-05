@@ -133,6 +133,10 @@ Communicator::~Communicator() {
     delete m_impl;
 }
 
+bool Communicator::good() const {
+    return m_impl != nullptr && m_impl->transport != nullptr;
+}
+
 int Communicator::subscribe(const endpoint& src, recv_fn fn, void* ctx) {
     if (!m_impl->transport) {
         dts::log::Error("[detmw] subscribe: transport not ready");
