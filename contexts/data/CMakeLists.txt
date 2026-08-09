@@ -10,6 +10,7 @@ add_library(data STATIC
   domain/src/extractor.cpp
   domain/src/extractor_registry.cpp
   domain/src/data_factory_v2.cpp
+  domain/src/tdmap_v2.cpp
   domain/src/processor/cell_prb_processor.cpp
   domain/src/processor/ue_bler_processor.cpp)
 target_include_directories(data PUBLIC

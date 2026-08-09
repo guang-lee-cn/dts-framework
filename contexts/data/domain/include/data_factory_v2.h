@@ -1,8 +1,7 @@
 #pragma once
 
 #include <cstdint>
-
-#include "data_model.h"
+#include <vector>
 
 namespace dts::data {
 
@@ -12,6 +11,9 @@ namespace dts::data {
 class DataFactory {
 public:
     static DataFactory& Instance();
+
+    // 任务消息（task 线程经 mailbox 投递）：data 线程内更新 TdMapV2
+    void OnTask(uint32_t taskId, const std::vector<uint16_t>& dataIds, uint32_t periodMs);
 
     // 处理一帧 rawData（data 线程独占）。nowTick 用于周期判定/TTL
     void Process(const void* rawData, uint32_t len, uint16_t dataType, uint32_t nowTick);
