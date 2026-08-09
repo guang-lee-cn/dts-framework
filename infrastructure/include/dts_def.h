@@ -20,6 +20,7 @@ constexpr uint32_t MSG_ID_LOG_COLLECT      = 0x0005;  // 调度 -> log
 constexpr uint32_t MSG_ID_LOG_REPORT       = 0x0006;  // log -> 网管（log 线程 pub 能力）
 constexpr uint32_t MSG_ID_TASK_CONFIG      = 0x0007;  // nfoam -> task 配置变更（32K JSON）
 constexpr uint32_t MSG_ID_TASK_RESPONSE    = 0x0008;  // task -> nfoam 响应 JSON（双向收发）
+constexpr uint32_t MSG_ID_TIMER            = 0x0009;  // 线程定时 tick（ThreadRun 100ms 超时投递）
 
 // ---- 会话：统一寻址键 detmw::endpoint（detmw.h，== / hash / ToString 内置）----
 constexpr const char* SESSION_TYPE_DTS  = "DTS";

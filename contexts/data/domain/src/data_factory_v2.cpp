@@ -48,8 +48,7 @@ void DataFactory::OnTask(uint32_t taskId, const std::vector<uint16_t>& dataIds, 
     g_tdmap.UpsertTask(t);
 }
 
-void DataFactory::Process(const void* rawData, uint32_t len, uint16_t dataType, uint32_t nowTick) {
-    m_tick = nowTick;
+void DataFactory::Process(const void* rawData, uint32_t len, uint16_t dataType) {
     if (g_tdmap.Empty()) {
         return;  // 无任务跟踪，跳过（工厂零加工）
     }
@@ -66,10 +65,10 @@ void DataFactory::Process(const void* rawData, uint32_t len, uint16_t dataType, 
             continue;
         }
 
-        // 阶段一：定位槽 → Extra 加工 → Hton
+        // 阶段一：定位槽 → Extra 加工 → Hton（TTL 用 m_tick）
         void* cache = nullptr;
         if (spec->needCache) {
-            CacheHead* block = mem.AcquireBlock(dataType, spec->periodTicks, key, nowTick);
+            CacheHead* block = mem.AcquireBlock(dataType, spec->periodTicks, key, m_tick);
             if (block == nullptr) continue;
             cache = mem.SlotOf(block, dataId);
         } else {
@@ -80,7 +79,7 @@ void DataFactory::Process(const void* rawData, uint32_t len, uint16_t dataType, 
         spec->proc->Hton(cache, spec->cacheSize);
 
         // 阶段二：周期到达 → Report 分发到跟踪该 dataId 的各 task 上报缓存
-        if (nowTick % spec->periodTicks != 0) {
+        if (m_tick % spec->periodTicks != 0) {
             continue;  // 周期未到，等下一帧
         }
         const std::vector<uint32_t> tasks = g_tdmap.TasksOfDataId(dataId);
@@ -89,7 +88,7 @@ void DataFactory::Process(const void* rawData, uint32_t len, uint16_t dataType, 
             if (rb == nullptr) continue;
             if (rb->used == 0) {
                 rb->header.taskId = taskId;
-                rb->header.timestampMs = static_cast<uint64_t>(nowTick) * kTickMs;
+                rb->header.timestampMs = static_cast<uint64_t>(m_tick) * kTickMs;
             }
             // 子头 + data 追加（基类 Report 默认实现，dst = payload 当前写入位）
             uint8_t* dst = rb->payload + rb->used;
@@ -106,8 +105,31 @@ void DataFactory::Process(const void* rawData, uint32_t len, uint16_t dataType, 
     }
 }
 
+void DataFactory::OnTick() {
+    ++m_tick;
+    auto& mem = DataMemManager::Instance();
+    mem.EvictExpired(m_tick);   // TTL：超周期槽数据失效归还
+
+    // 1s（10 tick）推送上报缓存
+    if (m_tick % (1000 / kTickMs) != 0) {
+        return;
+    }
+    FlushReports();
+}
+
 void DataFactory::FlushReports() {
-    // 阶段 5：DataMemManager::ForEachReport → publish_external(REPORT) → 清空 used
+    if (m_sink == nullptr) {
+        return;  // 无上报出口（未装配），跳过
+    }
+    auto& mem = DataMemManager::Instance();
+    mem.ForEachReport([this](ReportBuf& rb) {
+        if (rb.used == 0) {
+            return;  // 本周期无数据
+        }
+        rb.header.payloadLen = rb.used;
+        m_sink->Publish(&rb, sizeof(ReportHeader) + rb.used);  // 总头 + payload
+        rb.used = 0;  // 清空，下周期重新累积
+    });
 }
 
 }  // namespace dts::data

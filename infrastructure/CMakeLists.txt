@@ -14,6 +14,7 @@ add_library(infrastructure STATIC
   src/dts_mw.cpp
   src/dts_thread.cpp
   src/ctl.cpp
-  src/console.cpp)
+  src/console.cpp
+  src/timer.cpp)
 target_include_directories(infrastructure PUBLIC include)
 target_link_libraries(infrastructure PUBLIC detmw dts_log detsched Threads::Threads)

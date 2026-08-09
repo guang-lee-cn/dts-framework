@@ -26,12 +26,18 @@ void ThreadRun(ThreadCtx* ctx) {
     while (!ctx->m_stop.load()) {
         MailMsg msg;
         bool got = false;
+        bool timeout = false;
         {
             std::unique_lock<std::mutex> lk(ctx->m_mailbox.m_mutex);
-            ctx->m_mailbox.m_cv.wait_until(
+            timeout = !ctx->m_mailbox.m_cv.wait_until(
                 lk, std::chrono::steady_clock::now() + std::chrono::milliseconds(100),
                 [&] { return !ctx->m_mailbox.EmptyLocked() || ctx->m_stop.load(); });
             got = ctx->m_mailbox.TryPopLocked(msg);
+        }
+        // 超时（无消息）：投递定时 tick，驱动业务线程 TimerWheel（不阻塞，固定 100ms 节拍）
+        if (!got && timeout && ctx->m_entry != nullptr) {
+            ctx->m_entry(ctx->m_status.load(), MSG_ID_TIMER, nullptr, 0);
+            continue;
         }
         if (!got) continue;
 
