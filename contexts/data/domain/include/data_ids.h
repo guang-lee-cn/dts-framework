@@ -89,4 +89,15 @@ inline constexpr DataIdSpec kCellSpecs[] = { DTS_CELL_DATA_IDS(SPEC_CELL) };
 inline constexpr DataIdSpec kUeSpecs[] = { DTS_UE_DATA_IDS(SPEC_UE) };
 #undef SPEC_UE
 
+// dataId → spec 查找（注册宏用，跨 cell/ue 两表）
+inline const DataIdSpec* SpecOf(uint16_t dataId) {
+    for (const auto& s : kCellSpecs) {
+        if (s.dataId == dataId) return &s;
+    }
+    for (const auto& s : kUeSpecs) {
+        if (s.dataId == dataId) return &s;
+    }
+    return nullptr;
+}
+
 }  // namespace dts::data

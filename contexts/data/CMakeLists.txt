@@ -6,6 +6,10 @@ add_library(data STATIC
   domain/src/report_cache.cpp
   domain/src/data_construct.cpp
   domain/src/data_factory.cpp
+  domain/src/data_mem_manager.cpp
+  domain/src/extractor.cpp
+  domain/src/extractor_registry.cpp
+  domain/src/data_factory_v2.cpp
   domain/src/processor/cell_prb_processor.cpp
   domain/src/processor/ue_bler_processor.cpp)
 target_include_directories(data PUBLIC
