@@ -5,7 +5,7 @@
 
 ## 当前任务（ISO 重构）
 
-**阶段：detmw + bootstrap + 日志 + console 控制面完成，下一步 data 子系统 ISO 重设计（数据工厂，窗口启动见 [CONTEXT-data.md](CONTEXT-data.md)）。**
+**阶段：detmw + bootstrap + 日志 + console 完成；data 子系统 ISO 定稿（[data-subsystem.md](design/data-subsystem.md)），进入阶段 1 实现（数据模型）。**
 
 ## 已建成（可运行，ctest 3/3 过）
 
@@ -28,7 +28,7 @@
 
 ## 已知问题 / 待办
 
-- [ ] **data 子系统 ISO 重设计**（下一步，窗口启动见 [CONTEXT-data.md](CONTEXT-data.md)）：数据工厂机制（Feed 匹配/缓存/上报协议）+ 业务数据模型，内部架构可重写
+- [ ] **data 子系统实现**（ISO 已定稿 [data-subsystem.md](design/data-subsystem.md)，7 阶段串行，阶段 1 数据模型进行中）：数据模型 → 内存层 → 工厂 → 任务库 → 定时上报 → 打通验证 → 完善
 - [ ] **决策**：subscribe 部分失败策略（当前降级继续，检视 R1 遗留：失败即停 vs 部分降级）
 - [ ] **每线程 logger**：契约规划 dts_data/dts_task/dts_log 每线程一 logger，当前单 default logger（文件名 {} 恒为 "dts"），随 contexts 逐层落地切换
 - [ ] **验证 R2**：FastDDS `delete_participant` join 接收线程假设（高吞吐压力 + ASan 确认无 UAF）
