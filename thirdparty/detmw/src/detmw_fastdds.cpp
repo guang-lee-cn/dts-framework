@@ -147,6 +147,43 @@ DataWriter* FindWriter(FastDdsState* s, const std::string& topic_name) {
     return nullptr;
 }
 
+// ---- QoS 调参（DETMW_QOS_* 环境变量，扫性能曲线用；进程级，所有 reader/writer 同一套）----
+// 蓝本参考 quality/test/fastdds_burst_repro.cpp 的 REPRO_TUNED 块。
+// 注意：SHM 段大小不可调（Bug 8 自定义 SHM 析构 SEGV），transport 维度仅 SHM/UDP 二选一。
+struct QosSettings {
+    bool reliable = true;         // DETMW_QOS_RELIABILITY=reliable|best_effort
+    bool keepLast = true;         // DETMW_QOS_HISTORY=keep_last|keep_all
+    uint32_t depth = 1000;        // DETMW_QOS_DEPTH
+    bool transientLocal = false;  // DETMW_QOS_DURABILITY=transient_local
+    int32_t maxSamples = -1;      // DETMW_QOS_MAX_SAMPLES（-1=不限）
+};
+
+const QosSettings& LoadQos() {
+    static const QosSettings q = [] {
+        QosSettings s;
+        if (const char* v = std::getenv("DETMW_QOS_RELIABILITY")) {
+            s.reliable = std::strcmp(v, "best_effort") != 0;
+        }
+        if (const char* v = std::getenv("DETMW_QOS_HISTORY")) {
+            s.keepLast = std::strcmp(v, "keep_all") != 0;
+        }
+        if (const char* v = std::getenv("DETMW_QOS_DEPTH")) {
+            s.depth = static_cast<uint32_t>(std::strtoul(v, nullptr, 10));
+        }
+        if (const char* v = std::getenv("DETMW_QOS_DURABILITY")) {
+            s.transientLocal = std::strcmp(v, "transient_local") == 0;
+        }
+        if (const char* v = std::getenv("DETMW_QOS_MAX_SAMPLES")) {
+            s.maxSamples = static_cast<int32_t>(std::strtol(v, nullptr, 10));
+        }
+        dts::log::Info("[detmw] QoS reliability={} history={} depth={} transient_local={} max_samples={}",
+                       s.reliable ? "reliable" : "best_effort", s.keepLast ? "keep_last" : "keep_all",
+                       s.depth, s.transientLocal ? 1 : 0, s.maxSamples);
+        return s;
+    }();
+    return q;
+}
+
 }  // namespace
 
 // FastDDS 传输实现：TransportInterface 的 FastDDS 适配（D10 唯一切换点）
@@ -223,10 +260,17 @@ public:
             return -1;
         }
         auto listener = std::make_unique<RecvListener>(*m_state->type, fn, ctx);
+        const QosSettings& qos = LoadQos();
         DataReaderQos rqos = DATAREADER_QOS_DEFAULT;
-        rqos.reliability().kind = RELIABLE_RELIABILITY_QOS;
-        rqos.history().kind = KEEP_LAST_HISTORY_QOS;
-        rqos.history().depth = 1000;  // 加深在途容量（不动可靠 timing，避免丢包）
+        rqos.reliability().kind = qos.reliable ? RELIABLE_RELIABILITY_QOS : BEST_EFFORT_RELIABILITY_QOS;
+        rqos.history().kind = qos.keepLast ? KEEP_LAST_HISTORY_QOS : KEEP_ALL_HISTORY_QOS;
+        rqos.history().depth = qos.depth;
+        if (qos.transientLocal) {
+            rqos.durability().kind = TRANSIENT_LOCAL_DURABILITY_QOS;
+        }
+        if (qos.maxSamples >= 0) {
+            rqos.resource_limits().max_samples = qos.maxSamples;
+        }
         DataReader* reader = m_state->subscriber->create_datareader(t, rqos, listener.get());
         if (!reader) {
             dts::log::Error("[detmw] reader create failed: {}", topic);
@@ -252,10 +296,17 @@ public:
             dts::log::Error("[detmw] topic create failed: {}", topic);
             return -1;
         }
+        const QosSettings& qos = LoadQos();
         DataWriterQos wqos = DATAWRITER_QOS_DEFAULT;
-        wqos.reliability().kind = RELIABLE_RELIABILITY_QOS;
-        wqos.history().kind = KEEP_LAST_HISTORY_QOS;
-        wqos.history().depth = 1000;
+        wqos.reliability().kind = qos.reliable ? RELIABLE_RELIABILITY_QOS : BEST_EFFORT_RELIABILITY_QOS;
+        wqos.history().kind = qos.keepLast ? KEEP_LAST_HISTORY_QOS : KEEP_ALL_HISTORY_QOS;
+        wqos.history().depth = qos.depth;
+        if (qos.transientLocal) {
+            wqos.durability().kind = TRANSIENT_LOCAL_DURABILITY_QOS;
+        }
+        if (qos.maxSamples >= 0) {
+            wqos.resource_limits().max_samples = qos.maxSamples;
+        }
         DataWriter* w = m_state->publisher->create_datawriter(t, wqos);
         if (!w) {
             dts::log::Error("[detmw] writer create failed: {}", topic);

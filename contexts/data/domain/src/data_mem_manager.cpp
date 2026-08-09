@@ -44,7 +44,6 @@ struct RegionDesc {
 struct DataMemManager::Impl {
     std::vector<RegionDesc> regions;
     std::unordered_map<uint16_t, std::pair<uint8_t*, uint32_t>> fixedSlots;  // dataId → (base, size)
-    std::unordered_map<uint32_t, std::unique_ptr<ReportBuf>> reports;
     bool init = false;
 
     RegionDesc* FindRegion(uint16_t domain, uint32_t periodTicks) {
@@ -196,27 +195,6 @@ void DataMemManager::EvictExpired(uint32_t nowTick) {
                 r.used[idx] = false;  // 归还槽位
             }
         }
-    }
-}
-
-ReportBuf* DataMemManager::AcquireReport(uint32_t taskId) {
-    auto it = m_impl->reports.find(taskId);
-    if (it != m_impl->reports.end()) {
-        return it->second.get();
-    }
-    auto rb = std::make_unique<ReportBuf>();
-    ReportBuf* p = rb.get();
-    m_impl->reports.emplace(taskId, std::move(rb));
-    return p;
-}
-
-void DataMemManager::ReleaseReport(uint32_t taskId) {
-    m_impl->reports.erase(taskId);
-}
-
-void DataMemManager::ForEachReport(const std::function<void(ReportBuf&)>& fn) {
-    for (auto& kv : m_impl->reports) {
-        fn(*kv.second);
     }
 }
 

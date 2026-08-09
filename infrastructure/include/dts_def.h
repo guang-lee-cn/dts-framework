@@ -81,4 +81,10 @@ struct TaskActiveMsg {
     uint16_t dataIds[8];
 };
 
+// 任务握手请求（spaMock → data，直通模式建任务；data 标记 currentTask 后通道建立）
+struct TaskRequest {
+    uint32_t taskId;
+    uint32_t status;  // 0=请求 / 1=成功
+};
+
 }  // namespace dts

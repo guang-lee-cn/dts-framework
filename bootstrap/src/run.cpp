@@ -7,6 +7,9 @@
 #include <vector>
 
 #include "console.h"
+#include "data_factory_v2.h"
+#include "data_mem_manager.h"
+#include "data_mw_report_sink.h"
 #include "data_msg_handler.h"
 #include "detmw.h"
 #include "dts_data_entry.h"
@@ -96,6 +99,7 @@ void OnRouteMsg(void* userCtx, const uint8_t* data, uint32_t len) {
 struct Process {
     StopSignal stop;  // 生命周期停止信号：外部 RequestStop → WaitStop 返回 → Stop() 下电
     std::unique_ptr<detmw::Communicator> comm;
+    std::unique_ptr<data::ReportSink> dataReportSink;  // data 上报出口（DtsMw 适配）
     Worker task;
     Worker data;
     Worker log;
@@ -207,6 +211,12 @@ int Run(const char* cfg_path) {
         return 2;
     }
     DtsMwSet(p.comm.get());
+
+    // 2.5 data 子系统：内存池初始化 + extractor 注册（强制链接）+ 上报出口注入（DtsMw 适配）
+    dts::data::DataMemManager::Instance().Init();
+    dts::data::InitExtractors();
+    p.dataReportSink = std::make_unique<DataMwReportSink>();
+    dts::data::DataFactory::Instance().SetReportSink(p.dataReportSink.get());
 
     // 3. 业务线程 + 订阅 + console/control 装配
     if (!p.Start(MakeConsoleSockPath(cfg_path).c_str())) {

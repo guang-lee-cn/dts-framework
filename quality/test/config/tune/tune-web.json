@@ -1,0 +1,11 @@
+{
+    "process": "tune-web",
+    "domain": 5,
+    "peers": [
+        "tune-dts",
+        "tune-spa"
+    ],
+    "topics": [
+        { "session_type": "DTS", "session_inst": "data", "msg_id": 4, "role": "subscribe", "thread": "data" }
+    ]
+}

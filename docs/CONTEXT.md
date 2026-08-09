@@ -5,7 +5,7 @@
 
 ## 当前任务（ISO 重构）
 
-**阶段：detmw + bootstrap + 日志 + console 完成；data 子系统 ISO 定稿（[data-subsystem.md](design/data-subsystem.md)），进入阶段 1 实现（数据模型）。**
+**阶段：data 子系统阶段 6 完成（直通改造 + DDS 调优链路 + QoS 扫描）。下一步：DDS 调优深化（transport/reliable times）+ gtest/lcov 补 + kafka 落地。**
 
 ## 已建成（可运行，ctest 3/3 过）
 

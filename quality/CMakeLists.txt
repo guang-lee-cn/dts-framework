@@ -118,3 +118,47 @@ add_test(NAME s_level_perf
 
 # 注：原生线程 API 拦截脚本由 detsched 库提供（thirdparty/detsched/tools/check_no_native_thread.sh），
 #     由各业务工程自行集成到自身 CI，线程库不代集成。
+
+# ---- DDS 调优链路：tune_dts + spa_mock_proc（握手+上报rawData）+ webserver_mock（收上报落CSV）----
+set(TUNE_CFG_DIR ${CMAKE_CURRENT_SOURCE_DIR}/test/config/tune)
+set(TUNE_GEN_DIR ${CMAKE_BINARY_DIR}/generated/detmw-tune)
+
+set(TUNE_GEN_OUTPUTS
+  ${TUNE_GEN_DIR}/tune-dts/task_routes.h
+  ${TUNE_GEN_DIR}/tune-dts/data_routes.h
+  ${TUNE_GEN_DIR}/tune-dts/log_routes.h
+  ${TUNE_GEN_DIR}/tune-dts/tune-dts.json
+  ${TUNE_GEN_DIR}/tune-dts/staticdiscovery.xml
+  ${TUNE_GEN_DIR}/tune-spa/tune-spa.json
+  ${TUNE_GEN_DIR}/tune-spa/staticdiscovery.xml
+  ${TUNE_GEN_DIR}/tune-web/tune-web.json
+  ${TUNE_GEN_DIR}/tune-web/staticdiscovery.xml)
+add_custom_command(
+  OUTPUT ${TUNE_GEN_OUTPUTS}
+  COMMAND python3 ${DETMW_GEN_SCRIPT} ${TUNE_CFG_DIR} ${TUNE_GEN_DIR}
+  DEPENDS ${TUNE_CFG_DIR}/tune-dts.json ${TUNE_CFG_DIR}/tune-spa.json ${TUNE_CFG_DIR}/tune-web.json
+          ${DETMW_GEN_SCRIPT}
+  COMMENT "generating detmw tune configs"
+  VERBATIM)
+add_custom_target(detmw_tune_gen
+  DEPENDS ${TUNE_GEN_DIR}/tune-dts/tune-dts.json
+          ${TUNE_GEN_DIR}/tune-spa/tune-spa.json
+          ${TUNE_GEN_DIR}/tune-web/tune-web.json)
+
+# 中段 dts 进程（复用 bootstrap 启动源码，同 dts_test 模式）
+add_executable(tune_dts ${DTS_STARTUP_SOURCES})
+target_include_directories(tune_dts PRIVATE ${TUNE_GEN_DIR}/tune-dts)
+target_link_libraries(tune_dts PRIVATE
+  bootstrap task data log infrastructure dts_agent detsched detmw Threads::Threads)
+add_dependencies(tune_dts detmw_tune_gen)
+
+# mock 进程（纯 detmw pub/sub，不链 bootstrap，不消费 routes.h）
+add_executable(spa_mock_proc test/spa_mock_proc.cpp)
+target_include_directories(spa_mock_proc PRIVATE ${CMAKE_SOURCE_DIR}/infrastructure/include)
+target_link_libraries(spa_mock_proc PRIVATE detmw infrastructure Threads::Threads)
+add_dependencies(spa_mock_proc detmw_tune_gen)
+
+add_executable(webserver_mock test/webserver_mock.cpp)
+target_include_directories(webserver_mock PRIVATE ${CMAKE_SOURCE_DIR}/infrastructure/include)
+target_link_libraries(webserver_mock PRIVATE detmw infrastructure Threads::Threads)
+add_dependencies(webserver_mock detmw_tune_gen)

@@ -1,25 +1,14 @@
 #pragma once
 
-#include <cstddef>
 #include <cstdint>
-#include <functional>
 
-#include "data_config.h"
 #include "data_model.h"
 
 namespace dts::data {
 
-// 上报缓存：per-task ≤32k，定时器 1s 推远端清空（payload 累积 n×(子头+dataId)）
-struct ReportBuf {
-    static constexpr size_t kCap = 32 * 1024;
-    ReportHeader header{};
-    uint8_t payload[kCap]{};
-    uint32_t used = 0;  // payload 有效字节
-};
-
-// data 线程内存管理专门类：加工缓存池（测量对象当前值）+ 上报缓存池（待推送快照）。
-// 加工缓存 = 源，上报缓存 = 快照，Report 做"源→快照"拷贝；上报集合 = 加工缓存 ∩ 激活集。
-// 全部内存启动时预分配（DataMemManager::Init），data 线程运行期零分配（ReportBuf 在 control path 分配）。
+// data 线程内存管理专门类：加工缓存池（测量对象当前值）。
+// 全部内存启动时预分配（DataMemManager::Init），data 线程运行期零分配。
+// 注：周期汇聚上报缓存（ReportBuf）搁置，当前直通模式 Report 经 Extractor 基类直推 webserver。
 class DataMemManager {
 public:
     static DataMemManager& Instance();
@@ -40,11 +29,6 @@ public:
 
     // TTL：标记超期槽失效（定时器 nowTick 驱动，N 周期未更新归还）
     void EvictExpired(uint32_t nowTick);
-
-    // ---- 上报缓存：per-task（任务创建时 Acquire，control path 分配）----
-    ReportBuf* AcquireReport(uint32_t taskId);
-    void ReleaseReport(uint32_t taskId);
-    void ForEachReport(const std::function<void(ReportBuf&)>& fn);
 
 private:
     DataMemManager() = default;

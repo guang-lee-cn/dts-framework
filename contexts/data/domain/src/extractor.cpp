@@ -2,22 +2,35 @@
 
 #include <cstring>
 
-#include "data_model.h"
+#include "data_factory_v2.h"  // ReportSink（domain 内部头，无环）
+#include "data_model.h"       // ReportHeader / SubHeader
 
 namespace dts::data {
 
-// 默认 Report：cache → 上报缓存 dst（前置子头，再拷 cache）
-// 子头布局：SubHeader{dataId, len} + data；dst 由工厂定位到当前写入位
-int Extractor::Report(const void* cache, uint32_t len, void* dst, uint32_t cap) {
-    if (dst == nullptr || cap < sizeof(SubHeader) + len) {
-        return -1;  // 容量不足（超 ≤32k，工厂侧拆分/丢弃策略）
+// 基类默认 Report：栈帧组 ReportHeader + SubHeader + cache → sink->Publish 直推 webserver。
+// 所有 dataId 默认走此实现（子类不重写）；后续业务重构改本函数即可。
+void Extractor::Report(const ReportCtx& ctx) {
+    if (ctx.sink == nullptr || ctx.cache == nullptr) {
+        return;
     }
-    auto* p = static_cast<uint8_t*>(dst);
-    SubHeader sh{};
-    sh.len = len;  // dataId 由工厂填（基类不知当前 dataId）
-    std::memcpy(p, &sh, sizeof(sh));
-    std::memcpy(p + sizeof(SubHeader), cache, len);
-    return static_cast<int>(sizeof(SubHeader) + len);
+    // 上限保护：单次上报 ≤32k（REPORT 通道约定），超限截断
+    constexpr uint32_t kMaxPayload = 32 * 1024;
+    const uint32_t dataLen = ctx.len > kMaxPayload ? kMaxPayload : ctx.len;
+    const uint32_t total = sizeof(ReportHeader) + sizeof(SubHeader) + dataLen;
+
+    uint8_t buf[32 * 1024 + sizeof(ReportHeader) + sizeof(SubHeader)];
+    auto* hdr = reinterpret_cast<ReportHeader*>(buf);
+    hdr->taskId = ctx.taskId;
+    hdr->timestampMs = ctx.timestampMs;
+    hdr->seq = ctx.seq;
+    hdr->payloadLen = sizeof(SubHeader) + dataLen;
+
+    auto* sh = reinterpret_cast<SubHeader*>(buf + sizeof(ReportHeader));
+    sh->dataId = ctx.dataId;
+    sh->len = dataLen;
+
+    std::memcpy(buf + sizeof(ReportHeader) + sizeof(SubHeader), ctx.cache, dataLen);
+    ctx.sink->Publish(buf, total);
 }
 
 }  // namespace dts::data
