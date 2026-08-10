@@ -5,6 +5,7 @@
 #include <memory>
 
 #include "data_ids.h"
+#include "log.h"
 
 namespace dts::data {
 
@@ -31,6 +32,7 @@ private:
 void InitExtractors() {
     constexpr uint32_t kHead = sizeof(uint16_t) + sizeof(uint32_t) * 2;  // dataType + cellId + cpId
     auto& reg = ExtractorRegistry::Instance();
+    int n = 0;
     for (uint16_t i = 0; i < kCellDataIdCount; ++i) {
         const uint16_t id = kCellDataIdBase + i;
         const DataIdSpec* s = SpecOf(id);
@@ -40,7 +42,9 @@ void InitExtractors() {
         auto proc = std::make_unique<CCellSlice>();
         proc->SetOffset(kHead + i * 8);  // dataId i 切 raw 第 i 个 8 字节切片
         reg.Register(id, s->dataType, s->cacheSize, s->periodTicks, s->needCache, std::move(proc));
+        ++n;
     }
+    dts::log::Info("[data] InitExtractors registered={} cell dataId", n);
 }
 
 }  // namespace dts::data

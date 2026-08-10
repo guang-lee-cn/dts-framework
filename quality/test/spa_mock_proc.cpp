@@ -80,7 +80,9 @@ int main(int argc, char** argv) {
     TaskRequest req{1, 1};
     comm.publish_external(detmw::endpoint{SESSION_TYPE_DTS, SESSION_INST_DATA, MSG_ID_DATA_TASK_ACTIVE},
                           reinterpret_cast<const uint8_t*>(&req), sizeof(req));
-    std::printf("[spa-mock] handshake sent (taskId=1), starting %s\n", steady ? "steady stream" : "burst");
+    std::printf("[spa-mock] handshake sent (taskId=1), wait 2s for data OnTask...\n");
+    std::this_thread::sleep_for(std::chrono::seconds(2));  // 等 data 建 currentTask（避免 raw 抢先到被丢）
+    std::printf("[spa-mock] starting %s\n", steady ? "steady stream" : "burst");
 
     const auto ep = detmw::endpoint{SESSION_TYPE_DTS, SESSION_INST_DATA, MSG_ID_AGENT_DATA};
     std::vector<uint8_t> raw;

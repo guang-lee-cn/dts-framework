@@ -42,6 +42,8 @@ private:
     uint32_t m_tick = 0;          // tick 计数（1 tick = 100ms）
     uint32_t m_currentTask = 0;   // 当前握手任务（Report 填 taskId）
     uint32_t m_seq = 0;           // 上报序号（Report 填 seq，递增）
+    uint64_t m_procCount = 0;     // Process 调用计数（性能测：每秒 log 消费速率）
+    uint64_t m_procSecBase = 0;   // 上一秒 Process 计数基线
     ReportSink* m_sink = nullptr;
     ReportAggregator m_agg;       // 上报聚合（每帧攒 500 dataId，Flush 一次 publish）
 };

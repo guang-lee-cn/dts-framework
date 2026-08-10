@@ -1,5 +1,7 @@
 #include "extractor_registry.h"
 
+#include "log.h"
+
 namespace dts::data {
 
 ExtractorRegistry& ExtractorRegistry::Instance() {
@@ -36,11 +38,19 @@ const ExtractorSpec* ExtractorRegistry::Find(uint16_t dataType, uint16_t dataId)
 void ExtractorRegistry::ForEachByDomain(uint16_t dataType,
                                         const std::function<void(const ExtractorSpec&)>& fn) const {
     std::lock_guard<std::mutex> lk(m_mutex);
+    int matched = 0;
     for (const auto& kv : m_table) {
         if (kv.second->dataType == dataType) {
             fn(*kv.second);
+            ++matched;
         }
     }
+    // 诊断：首次调用打印 dataType + 表大小 + 匹配数（定位 ForEach 空跑）
+    static std::once_flag s_flag;
+    std::call_once(s_flag, [&] {
+        dts::log::Info("[registry] ForEachByDomain type={} tableSize={} matched={}", dataType,
+                       m_table.size(), matched);
+    });
 }
 
 }  // namespace dts::data
