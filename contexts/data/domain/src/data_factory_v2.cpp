@@ -44,26 +44,26 @@ void DataFactory::Process(const void* rawData, uint32_t len, uint16_t dataType) 
     const uint64_t key = ExtractKey(dataType, rawData, len);
     const uint64_t ts = static_cast<uint64_t>(m_tick) * kTickMs;
 
-    // 直通：遍历该 dataType 全部注册 extractor，Extra 切 → Report 直推 webserver
+    // 合并上报：遍历 extractor 切分 → 攒到 aggregator → 帧末一次 publish（替代每 dataId 一发）
+    // 优化：同一测量对象的 500 dataId 共享一个 block，AcquireBlock 一次，SlotOf 各槽（省 499 次 hash 探测）
+    CacheHead* block = mem.AcquireBlock(dataType, kPeriod1S, key, m_tick);
+    m_agg.Begin(m_currentTask);
     reg.ForEachByDomain(dataType, [&](const ExtractorSpec& spec) {
         if (spec.proc == nullptr) {
             return;
         }
         void* cache = nullptr;
         if (spec.needCache) {
-            CacheHead* block = mem.AcquireBlock(dataType, spec.periodTicks, key, m_tick);
-            if (block == nullptr) return;
-            cache = mem.SlotOf(block, spec.dataId);
+            cache = (block != nullptr) ? mem.SlotOf(block, spec.dataId) : nullptr;
         } else {
             cache = mem.FixedSlot(spec.dataId);
         }
         if (cache == nullptr) return;
         spec.proc->Extra(rawData, len, cache);
         spec.proc->Hton(cache, spec.cacheSize);
-
-        ReportCtx ctx{cache, spec.cacheSize, spec.dataId, m_currentTask, ts, ++m_seq, m_sink};
-        spec.proc->Report(ctx);  // 基类直推：cache → sink → webserver
+        m_agg.Add(spec.dataId, cache, spec.cacheSize);  // 攒切片
     });
+    m_agg.Flush(ts, ++m_seq);  // 一次 publish：500 dataId 合并一帧 → sink → web/网管
 }
 
 void DataFactory::OnTick() {

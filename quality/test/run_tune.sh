@@ -19,6 +19,8 @@ WEB_CFG="$GEN_DIR/tune-web/tune-web.json"
 
 # 内存守护：MEM_LIMIT_MB（默认 2G）监控三进程 RSS，超限 kill 全部 + 报警（防系统卡死/断连）
 MEM_LIMIT_MB=${MEM_LIMIT_MB:-2048}
+# CPU 绑核：测试进程只用 TUNE_CPUS（默认 0-7，8 核），留核给 IDE/系统，防满载拖死 vscode
+TUNE_CPUS=${TUNE_CPUS:-0-7}
 TUNE_PIDS=""
 guard_mem() {
   while true; do
@@ -46,15 +48,15 @@ cleanup() {
 }
 trap cleanup EXIT
 
-echo "=== DDS tune chain start (rounds=$ROUNDS interval=${INTERVAL_US}us run=${RUN_S}s csv=${OUT_CSV:-none} mem_limit=${MEM_LIMIT_MB}MB) ==="
-"$DTS_BIN" "$DTS_CFG" > /tmp/tune_dts.log 2>&1 &
+echo "=== DDS tune chain start (rounds=$ROUNDS interval=${INTERVAL_US}us run=${RUN_S}s csv=${OUT_CSV:-none} mem_limit=${MEM_LIMIT_MB}MB cpus=${TUNE_CPUS}) ==="
+taskset -c "$TUNE_CPUS" "$DTS_BIN" "$DTS_CFG" > /tmp/tune_dts.log 2>&1 &
 DTS_PID=$!
 sleep 4                              # dts 上电 + 静态发现
 
 if [ -n "$OUT_CSV" ]; then
-    "$WEB_BIN" "$WEB_CFG" "$RUN_S" "$OUT_CSV" > /tmp/tune_web.log 2>&1 &
+    taskset -c "$TUNE_CPUS" "$WEB_BIN" "$WEB_CFG" "$RUN_S" "$OUT_CSV" > /tmp/tune_web.log 2>&1 &
 else
-    "$WEB_BIN" "$WEB_CFG" "$RUN_S" > /tmp/tune_web.log 2>&1 &
+    taskset -c "$TUNE_CPUS" "$WEB_BIN" "$WEB_CFG" "$RUN_S" > /tmp/tune_web.log 2>&1 &
 fi
 WEB_PID=$!
 sleep 2                              # web 订阅 + 发现完成
@@ -63,7 +65,7 @@ TUNE_PIDS="$DTS_PID $WEB_PID"
 guard_mem &
 GUARD_PID=$!
 
-"$SPA_BIN" "$SPA_CFG" "$ROUNDS" "$INTERVAL_US" > /tmp/tune_spa.log 2>&1
+taskset -c "$TUNE_CPUS" "$SPA_BIN" "$SPA_CFG" "$ROUNDS" "$INTERVAL_US" > /tmp/tune_spa.log 2>&1
 SPA_RC=$?
 
 kill "$GUARD_PID" 2>/dev/null        # spa 发完，停 guard

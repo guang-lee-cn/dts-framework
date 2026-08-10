@@ -3,8 +3,8 @@ add_library(data STATIC
   interface/src/dts_data_entry.cpp
   application/src/data_msg_handler.cpp
   domain/src/data_mem_manager.cpp
-  domain/src/extractor.cpp
   domain/src/extractor_registry.cpp
+  domain/src/report_aggregator.cpp
   domain/src/data_factory_v2.cpp
   domain/src/tdmap_v2.cpp
   domain/src/extractors.cpp)
