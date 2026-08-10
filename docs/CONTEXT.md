@@ -5,7 +5,7 @@
 
 ## 当前任务（ISO 重构）
 
-**阶段：data 子系统阶段 6 完成（直通改造 + DDS 调优链路 + QoS 扫描）。下一步：DDS 调优深化（transport/reliable times）+ gtest/lcov 补 + kafka 落地。**
+**阶段：data 子系统性能基线完成（bench 报告 [data-bench-report.md](design/data-bench-report.md)）。data 收 950/s（30 MB/s），瓶颈 FastDDS deserialize。优化到 data domain 无瓶颈。下一步：raw 序列化突破 / kafka 落地 / DDS QoS 深化。**
 
 ## 已建成（可运行，ctest 3/3 过）
 
