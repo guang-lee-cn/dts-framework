@@ -1,6 +1,8 @@
-// webserverMock 独立进程（DDS 调优链路）：收 dts data 上报(msg4 REPORT)，落 CSV（kafka TODO）。
-// 量接收吞吐/报文数；CSV：t_recv_us, taskId, dataId, payloadLen
-// 用法：webserver_mock <tune-web.json> <out.csv> [run_s]
+// webserverMock 独立进程（DDS 调优链路）：收 dts data 上报(msg4 REPORT)。
+// 量通道极限：默认只计数（report 数/字节），可选落 CSV。
+//   count 模式（默认）：OnReport 只 g_count++/g_bytes+=len，量 data→DDS→web 纯通道极限
+//   csv 模式（传 out.csv）：每帧落 CSV，量 CSV 落地极限
+// 用法：webserver_mock <tune-web.json> [run_s] [out.csv]
 #include <atomic>
 #include <chrono>
 #include <cstdio>
@@ -34,6 +36,7 @@ struct WebSubHeader {
 
 std::mutex g_mu;
 FILE* g_fp = nullptr;
+bool g_csv = false;
 std::atomic<uint64_t> g_count{0};
 std::atomic<uint64_t> g_bytes{0};
 
@@ -44,34 +47,30 @@ void OnReport(void*, const uint8_t* data, uint32_t len) {
     g_count.fetch_add(1);
     g_bytes.fetch_add(len);
 
+    if (!g_csv) {
+        return;  // count 模式：到此为止，量纯通道
+    }
     const auto* hdr = reinterpret_cast<const WebReportHeader*>(data);
     const uint64_t now = NowUs();
-    // 解析 payload 内所有子头（n×(SubHeader+data)）
-    uint32_t off = sizeof(WebReportHeader);
-    while (off + sizeof(WebSubHeader) <= len && off < sizeof(WebReportHeader) + hdr->payloadLen) {
-        const auto* sh = reinterpret_cast<const WebSubHeader*>(data + off);
-        {
-            std::lock_guard<std::mutex> lk(g_mu);
-            if (g_fp) {
-                std::fprintf(g_fp, "%llu,%u,%u,%u\n",
-                             static_cast<unsigned long long>(now), hdr->taskId, sh->dataId,
-                             hdr->payloadLen);
-            }
+    if (len >= sizeof(WebReportHeader) + sizeof(WebSubHeader)) {
+        const auto* sh = reinterpret_cast<const WebSubHeader*>(data + sizeof(WebReportHeader));
+        std::lock_guard<std::mutex> lk(g_mu);
+        if (g_fp) {
+            std::fprintf(g_fp, "%llu,%u,%u,%u\n",
+                         static_cast<unsigned long long>(now), hdr->taskId, sh->dataId,
+                         hdr->payloadLen);
         }
-        off += sizeof(WebSubHeader) + sh->len;
-        break;  // 每帧记一条（第一个 dataId 代表），避免 CSV 膨胀
     }
 }
 
 }  // namespace
 
 int main(int argc, char** argv) {
-    if (argc < 3) {
-        std::printf("usage: %s <tune-web.json> <out.csv> [run_s]\n", argv[0]);
+    if (argc < 2) {
+        std::printf("usage: %s <tune-web.json> [run_s] [out.csv]\n", argv[0]);
         return 1;
     }
-    const char* out = argv[2];
-    const int runSec = (argc >= 4) ? std::atoi(argv[3]) : 8;
+    const int runSec = (argc >= 3) ? std::atoi(argv[2]) : 8;
 
     detmw::Communicator comm(argv[1]);
     if (!comm.good()) {
@@ -79,26 +78,30 @@ int main(int argc, char** argv) {
         return 1;
     }
 
-    g_fp = std::fopen(out, "w");
-    if (g_fp == nullptr) {
-        std::printf("[web-mock] open %s failed\n", out);
-        return 1;
+    if (argc >= 4) {
+        g_csv = true;
+        g_fp = std::fopen(argv[3], "w");
+        if (g_fp == nullptr) {
+            std::printf("[web-mock] open %s failed\n", argv[3]);
+            return 1;
+        }
+        std::fprintf(g_fp, "t_recv_us,taskId,dataId,payloadLen\n");
     }
-    std::fprintf(g_fp, "t_recv_us,taskId,dataId,payloadLen\n");
 
     if (comm.subscribe(detmw::endpoint{SESSION_TYPE_DTS, SESSION_INST_DATA, MSG_ID_REPORT},
                        OnReport, nullptr) != 0) {
         std::printf("[web-mock] subscribe failed\n");
-        std::fclose(g_fp);
+        if (g_fp) std::fclose(g_fp);
         return 1;
     }
 
-    std::printf("[web-mock] waiting for discovery, collecting %ds...\n", runSec);
+    const char* mode = g_csv ? "csv" : "count";
+    std::printf("[web-mock] waiting for discovery, collecting %ds (%s mode)...\n", runSec, mode);
     const uint64_t t0 = NowUs();
     std::this_thread::sleep_for(std::chrono::seconds(runSec));
     const double durS = static_cast<double>(NowUs() - t0) / 1e6;
 
-    {
+    if (g_csv) {
         std::lock_guard<std::mutex> lk(g_mu);
         std::fflush(g_fp);
         std::fclose(g_fp);
@@ -106,8 +109,8 @@ int main(int argc, char** argv) {
     }
     const uint64_t cnt = g_count.load();
     const uint64_t bytes = g_bytes.load();
-    std::printf("[web-mock] report=%llu frames in %.3fs -> %.0f fps, %.2f MB/s -> %s\n",
+    std::printf("[web-mock] report=%llu frames in %.3fs -> %.0f fps, %.2f MB/s (mode=%s)\n",
                 static_cast<unsigned long long>(cnt), durS, cnt / durS,
-                static_cast<double>(bytes) / durS / (1024 * 1024), out);
+                static_cast<double>(bytes) / durS / (1024 * 1024), mode);
     return 0;
 }
