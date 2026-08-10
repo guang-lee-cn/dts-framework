@@ -54,9 +54,9 @@ DTS_PID=$!
 sleep 4                              # dts 上电 + 静态发现
 
 if [ -n "$OUT_CSV" ]; then
-    taskset -c "$TUNE_CPUS" "$WEB_BIN" "$WEB_CFG" "$RUN_S" "$OUT_CSV" > /tmp/tune_web.log 2>&1 &
+    taskset -c "$TUNE_CPUS" "$WEB_BIN" "$WEB_CFG" "$RUN_S" "$OUT_CSV" "${WEB_READERS:-1}" > /tmp/tune_web.log 2>&1 &
 else
-    taskset -c "$TUNE_CPUS" "$WEB_BIN" "$WEB_CFG" "$RUN_S" > /tmp/tune_web.log 2>&1 &
+    taskset -c "$TUNE_CPUS" "$WEB_BIN" "$WEB_CFG" "$RUN_S" "" "${WEB_READERS:-1}" > /tmp/tune_web.log 2>&1 &
 fi
 WEB_PID=$!
 sleep 2                              # web 订阅 + 发现完成
