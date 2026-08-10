@@ -3,12 +3,15 @@
 #include <cstdint>
 #include <cstring>
 #include <functional>
+#include <memory>
 #include <string>
+#include <vector>
 
 namespace detmw {
 
-// 统一接收回调：消息到达时触发（SEDP 匹配完成后常态入口）
-using recv_fn = void (*)(void* user_ctx, const uint8_t* data, uint32_t len);
+// 统一接收回调：消息到达时触发（SEDP 匹配完成后常态入口）。
+// data 移交所有权（unique_ptr，零拷贝：reader 回调不拷贝/不释放，回调消费后自动释放）
+using recv_fn = void (*)(void* user_ctx, std::unique_ptr<std::vector<uint8_t>> data);
 
 // 统一寻址键：发布方与订阅方共享同一 endpoint，键即约定
 struct endpoint {

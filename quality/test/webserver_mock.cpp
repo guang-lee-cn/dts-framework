@@ -26,8 +26,9 @@ std::mutex g_mu;
 FILE* g_fp = nullptr;
 bool g_csv = false;
 
-void OnReport(void* ctx, const uint8_t* /*data*/, uint32_t len) {
+void OnReport(void* ctx, std::unique_ptr<std::vector<uint8_t>> data) {
     const int idx = static_cast<int>(reinterpret_cast<intptr_t>(ctx));
+    const uint32_t len = data ? static_cast<uint32_t>(data->size()) : 0;
     if (idx >= 0 && idx < kMaxReaders) {
         g_counts[idx].fetch_add(1);
     }

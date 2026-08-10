@@ -85,14 +85,14 @@ std::string MakeConsoleSockPath(const char* cfg_path) {
     return "/tmp/dts-" + name + ".sock";
 }
 
-// detmw 回调：消息 -> 目标线程 mailbox（跨线程投递，mailbox 自身线程安全）
-void OnRouteMsg(void* userCtx, const uint8_t* data, uint32_t len) {
+// detmw 回调：消息 -> 目标线程 mailbox（移所有权零拷贝，mailbox 自身线程安全）
+void OnRouteMsg(void* userCtx, std::unique_ptr<std::vector<uint8_t>> data) {
     auto* sub = static_cast<Subscription*>(userCtx);
-    if (sub == nullptr || sub->thread == nullptr || (data == nullptr && len > 0)) {
+    if (sub == nullptr || sub->thread == nullptr) {
         dts::log::Warn("[Run] route ctx invalid");
         return;
     }
-    sub->thread->m_mailbox.Send(sub->ep.msg_id, data, len);
+    sub->thread->m_mailbox.Send(sub->ep.msg_id, std::move(data));
 }
 
 // ---- 组合根：通信站点 + 业务线程 + 订阅集合 + 生命周期停止信号，统一装配 ----

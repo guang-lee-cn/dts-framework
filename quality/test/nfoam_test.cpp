@@ -13,7 +13,7 @@ namespace {
 std::atomic<int> g_replyCount{0};
 
 // 收到 task 回包（msg2：task 现有 handler 收到 msg1 后 forward）
-void OnReply(void*, const uint8_t*, uint32_t) {
+void OnReply(void*, std::unique_ptr<std::vector<uint8_t>>) {
     g_replyCount.fetch_add(1);
     std::printf("[nfoam] task reply received\n");
     std::fflush(stdout);

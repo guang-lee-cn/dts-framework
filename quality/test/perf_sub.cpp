@@ -40,8 +40,10 @@ std::atomic<uint64_t> g_msg4n{0};
 std::atomic<bool> g_done{false};
 
 // msg2（task 段完成标记，fan-out 到 sub）
-void OnMsg2(void*, const uint8_t* data, uint32_t) {
-    uint32_t seq = PerfGetSeq(data);
+void OnMsg2(void*, std::unique_ptr<std::vector<uint8_t>> data) {
+    const uint8_t* d = data ? data->data() : nullptr;
+    if (!d) return;
+    uint32_t seq = PerfGetSeq(d);
     if (seq == kPerfDoneSeq) return;
     uint64_t now = NowUs();
     {
@@ -52,14 +54,16 @@ void OnMsg2(void*, const uint8_t* data, uint32_t) {
 }
 
 // msg4（数据上报，含 t_send 打点）
-void OnMsg4(void*, const uint8_t* data, uint32_t) {
-    uint32_t seq = PerfGetSeq(data);
+void OnMsg4(void*, std::unique_ptr<std::vector<uint8_t>> data) {
+    const uint8_t* d = data ? data->data() : nullptr;
+    if (!d) return;
+    uint32_t seq = PerfGetSeq(d);
     if (seq == kPerfDoneSeq) {
         g_done.store(true);
         return;
     }
     uint64_t tRecv = NowUs();
-    uint64_t tSend = PerfGetTs(data);
+    uint64_t tSend = PerfGetTs(d);
     uint64_t tMid = 0;
     {
         std::lock_guard<std::mutex> lk(g_mu);
@@ -79,14 +83,16 @@ void OnMsg4(void*, const uint8_t* data, uint32_t) {
 std::atomic<uint64_t> g_logRecv{0};
 std::vector<uint64_t> g_logLat;  // 保护同 g_mu
 
-void OnLog(void*, const uint8_t* data, uint32_t) {
-    uint32_t seq = PerfGetSeq(data);
+void OnLog(void*, std::unique_ptr<std::vector<uint8_t>> data) {
+    const uint8_t* d = data ? data->data() : nullptr;
+    if (!d) return;
+    uint32_t seq = PerfGetSeq(d);
     if (seq == kPerfDoneSeq) {
         g_done.store(true);
         return;
     }
     uint64_t tRecv = NowUs();
-    uint64_t tSend = PerfGetTs(data);
+    uint64_t tSend = PerfGetTs(d);
     {
         std::lock_guard<std::mutex> lk(g_mu);
         g_logLat.push_back(tRecv - tSend);

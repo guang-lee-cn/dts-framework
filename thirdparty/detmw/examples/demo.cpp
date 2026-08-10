@@ -11,10 +11,12 @@
 using namespace std::chrono_literals;
 using namespace detmw;
 
-void on_recv(void* ctx, const uint8_t* data, uint32_t len) {
+void on_recv(void* ctx, std::unique_ptr<std::vector<uint8_t>> data) {
+    const uint8_t* p = data ? data->data() : nullptr;
+    uint32_t len = data ? static_cast<uint32_t>(data->size()) : 0;
     (void)ctx;
     std::printf("[sub] recv %u bytes: %.*s\n", len, static_cast<int>(len),
-                reinterpret_cast<const char*>(data));
+                reinterpret_cast<const char*>(p));
     std::fflush(stdout);
 }
 

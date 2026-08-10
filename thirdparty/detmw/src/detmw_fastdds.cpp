@@ -86,19 +86,16 @@ public:
         // 只 take 一条会让数据堆在 reader history，被 KEEP_LAST 覆盖（高吞吐丢包根因）
         while (true) {
             SampleInfo info;
-            void* data = m_type.create_data();
-            if (reader->take_next_sample(data, &info) != RETCODE_OK) {
-                m_type.delete_data(data);
+            auto vec = std::make_unique<std::vector<uint8_t>>();  // 替 create_data（移所有权给回调，零拷贝）
+            if (reader->take_next_sample(vec.get(), &info) != RETCODE_OK) {
                 break;
             }
             if (info.valid_data) {
-                auto* vec = static_cast<std::vector<uint8_t>*>(data);
                 recvCount.fetch_add(1, std::memory_order_relaxed);
                 if (m_fn) {
-                    m_fn(m_ctx, vec->data(), static_cast<uint32_t>(vec->size()));
+                    m_fn(m_ctx, std::move(vec));  // 移交（回调消费后自动释放，reader 不 delete）
                 }
             }
-            m_type.delete_data(data);
         }
     }
 

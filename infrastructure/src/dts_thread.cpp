@@ -42,16 +42,16 @@ void ThreadRun(ThreadCtx* ctx) {
         if (!got) continue;
 
         // 状态消息：更新线程状态（消息仍转发，状态动作 fn 挂在 msg_handler）
-        if (msg.msgId == MSG_ID_STATUS && msg.payload.size() >= sizeof(StatusMsg)) {
-            const auto* st = reinterpret_cast<const StatusMsg*>(msg.payload.data());
+        if (msg.msgId == MSG_ID_STATUS && msg.payload && msg.payload->size() >= sizeof(StatusMsg)) {
+            const auto* st = reinterpret_cast<const StatusMsg*>(msg.payload->data());
             ctx->m_status.store(st->status);
             dts::log::Info("[{}] state -> {}", ctx->m_name.c_str(), static_cast<int>(st->status));
         }
 
         if (ctx->m_entry != nullptr) {
-            ctx->m_entry(ctx->m_status.load(), msg.msgId,
-                         msg.payload.empty() ? nullptr : msg.payload.data(),
-                         static_cast<uint32_t>(msg.payload.size()));
+            const uint8_t* p = (msg.payload && !msg.payload->empty()) ? msg.payload->data() : nullptr;
+            const uint32_t n = msg.payload ? static_cast<uint32_t>(msg.payload->size()) : 0;
+            ctx->m_entry(ctx->m_status.load(), msg.msgId, p, n);
         }
     }
 }

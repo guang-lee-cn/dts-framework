@@ -36,13 +36,15 @@ uint64_t NowUs() {
 }
 
 // 收到 task 响应(msg8)
-void OnResp(void*, const uint8_t* data, uint32_t) {
-    uint64_t seq = PerfJsonInt(data, "\"seq\"", 0);
+void OnResp(void*, std::unique_ptr<std::vector<uint8_t>> data) {
+    const uint8_t* d = data ? data->data() : nullptr;
+    if (!d) return;
+    uint64_t seq = PerfJsonInt(d, "\"seq\"", 0);
     if (seq == kPerfDoneSeq) {
         g_done.store(true);
         return;
     }
-    uint64_t tSend = PerfJsonInt(data, "\"t_send\"", 0);
+    uint64_t tSend = PerfJsonInt(d, "\"t_send\"", 0);
     uint64_t now = NowUs();
     std::lock_guard<std::mutex> lk(g_mu);
     if (!g_seen.insert(static_cast<uint32_t>(seq)).second) {
