@@ -28,9 +28,11 @@ Bypass GetBypass() {
 
 // 从 raw 帧取测量对象 hash 键（cell: cellId+cpId / ue: cellId+ueId）。
 // 约定：rawData = dataType(u16) + cellId(u32) + cpId/ueId(u32) + 数据字段
-// 性能测计数（ForEach 调用 = 切分次数；Flush 调用 = publish 次数）
+// 性能测计数（ForEach 调用 = 切分次数；Flush 调用 = publish 次数；skip = Process 提前返回）
 uint64_t g_forEachTotal = 0;
 uint64_t g_flushTotal = 0;
+uint64_t g_skipSink = 0;  // m_sink==null 跳过数
+uint64_t g_skipTask = 0;  // m_currentTask==0 跳过数
 
 uint64_t ExtractKey(uint16_t dataType, const void* rawData, uint32_t len) {
     if (len < sizeof(uint16_t) + sizeof(uint32_t) * 2) {
@@ -66,19 +68,29 @@ void DataFactory::Process(const void* rawData, uint32_t len, uint16_t dataType) 
     if (now - s_lastLog >= std::chrono::seconds(1)) {
         static uint64_t s_lastForEach = 0;
         static uint64_t s_lastFlush = 0;
-        dts::log::Info("[data:perf] consume={} raw/s forEach={} flush={} (proc={} fe={} fl={})",
+        static uint64_t s_lastSinkSkip = 0;
+        static uint64_t s_lastTaskSkip = 0;
+        dts::log::Info("[data:perf] consume={} forEach={} flush={} skipSink={} skipTask={}",
                        m_procCount - s_lastCount, g_forEachTotal - s_lastForEach,
-                       g_flushTotal - s_lastFlush, m_procCount, g_forEachTotal, g_flushTotal);
+                       g_flushTotal - s_lastFlush, g_skipSink - s_lastSinkSkip,
+                       g_skipTask - s_lastTaskSkip);
         s_lastCount = m_procCount;
         s_lastForEach = g_forEachTotal;
         s_lastFlush = g_flushTotal;
+        s_lastSinkSkip = g_skipSink;
+        s_lastTaskSkip = g_skipTask;
         s_lastLog = now;
     }
     if (GetBypass() == Bypass::RECV) {
         return;  // 隔离测：只收不切，量 DDS 收极限（data reader → mailbox → Process 退出）
     }
-    if (m_sink == nullptr || m_currentTask == 0) {
-        return;  // 无上报出口或未握手建任务，跳过
+    if (m_sink == nullptr) {
+        ++g_skipSink;
+        return;
+    }
+    if (m_currentTask == 0) {
+        ++g_skipTask;
+        return;
     }
 
     auto& reg = ExtractorRegistry::Instance();

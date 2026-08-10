@@ -154,7 +154,9 @@ add_dependencies(tune_dts detmw_tune_gen)
 
 # mock 进程（纯 detmw pub/sub，不链 bootstrap，不消费 routes.h）
 add_executable(spa_mock_proc test/spa_mock_proc.cpp)
-target_include_directories(spa_mock_proc PRIVATE ${CMAKE_SOURCE_DIR}/infrastructure/include)
+target_include_directories(spa_mock_proc PRIVATE
+  ${CMAKE_SOURCE_DIR}/infrastructure/include
+  ${CMAKE_SOURCE_DIR}/contexts/data/domain/include)
 target_link_libraries(spa_mock_proc PRIVATE detmw infrastructure Threads::Threads)
 add_dependencies(spa_mock_proc detmw_tune_gen)
 

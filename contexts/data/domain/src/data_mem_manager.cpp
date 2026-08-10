@@ -79,33 +79,33 @@ void DataMemManager::Init() {
         m_impl = new Impl();
     }
 
-    // 按 spec 表分组建 region（needcache=true）/ 固定槽（needcache=false）
-    auto build = [&](const DataIdSpec* specs, size_t n) {
-        for (size_t i = 0; i < n; i++) {
-            const auto& s = specs[i];
-            if (!s.needCache) {
-                if (m_impl->fixedSlots.find(s.dataId) == m_impl->fixedSlots.end()) {
-                    uint32_t sz = AlignUp(s.cacheSize, 16);
-                    auto* p = static_cast<uint8_t*>(::operator new(sz, std::align_val_t{kAlign}));
-                    m_impl->fixedSlots.emplace(s.dataId, std::make_pair(p, sz));
-                }
-                continue;
-            }
-            RegionDesc* r = m_impl->FindRegion(s.dataType, s.periodTicks);
-            if (r == nullptr) {
-                RegionDesc nr;
-                nr.domain = s.dataType;
-                nr.periodTicks = s.periodTicks;
-                nr.slotCap = (s.dataType == static_cast<uint16_t>(DataType::CELL)) ? kCellSlotCap : kUeSlotCap;
-                nr.blockSize = AlignUp(sizeof(CacheHead), 16);
-                m_impl->regions.push_back(std::move(nr));
-                r = m_impl->FindRegion(s.dataType, s.periodTicks);
-            }
-            r->slotOffset[s.dataId] = r->blockSize;  // 槽紧跟 CacheHead 之后
-            r->blockSize = AlignUp(r->blockSize + s.cacheSize, 16);
+    // 按 spec 表建 region（needcache=true）：每 dataId 变长 4-200B，packed 累加 slotOffset
+    static DataIdSpec g_specs[kCellDataIdCount];
+    static bool s_init = false;
+    if (!s_init) {
+        for (uint16_t i = 0; i < kCellDataIdCount; ++i) {
+            g_specs[i] = SpecOf(kCellDataIdBase + i);
         }
-    };
-    build(kCellSpecs, sizeof(kCellSpecs) / sizeof(kCellSpecs[0]));
+        s_init = true;
+    }
+    for (uint16_t i = 0; i < kCellDataIdCount; ++i) {
+        const DataIdSpec& s = g_specs[i];
+        if (!s.needCache) {
+            continue;
+        }
+        RegionDesc* r = m_impl->FindRegion(s.dataType, s.periodTicks);
+        if (r == nullptr) {
+            RegionDesc nr;
+            nr.domain = s.dataType;
+            nr.periodTicks = s.periodTicks;
+            nr.slotCap = kCellSlotCap;
+            nr.blockSize = AlignUp(sizeof(CacheHead), 8);  // head 对齐 8
+            m_impl->regions.push_back(std::move(nr));
+            r = m_impl->FindRegion(s.dataType, s.periodTicks);
+        }
+        r->slotOffset[s.dataId] = r->blockSize;  // 槽偏移（packed）
+        r->blockSize += s.cacheSize;             // dataId 变长（memcpy 访问，不对齐）
+    }
 
     // 分配每个 region 的池
     for (auto& r : m_impl->regions) {

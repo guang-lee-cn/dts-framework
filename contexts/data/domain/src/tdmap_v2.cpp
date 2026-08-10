@@ -28,8 +28,8 @@ std::vector<uint16_t> TdMapV2::ActiveDataIds(uint16_t dataType) const {
     std::vector<uint16_t> out;
     for (const auto& kv : m_dataToTasks) {
         const uint16_t did = kv.first;
-        const DataIdSpec* s = SpecOf(did);
-        if (s != nullptr && s->dataType == dataType) {
+        const DataIdSpec s = SpecOf(did);
+        if (s.dataId != 0 && s.dataType == dataType) {
             if (seen.insert(did).second) {
                 out.push_back(did);
             }

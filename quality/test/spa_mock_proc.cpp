@@ -17,14 +17,14 @@
 #include "detmw.h"
 #include "dts_def.h"
 
+// 复用 data domain 的 dataId 大小表（spa/data 共享 raw layout，Σ cacheSize = 32K-head）
+#include "data_ids.h"
+
 using namespace dts;
 
 namespace {
 
-constexpr uint32_t kSliceCount = 500;
-constexpr uint32_t kSliceSize = 8;
-constexpr uint32_t kRawHead = sizeof(uint16_t) + sizeof(uint32_t) * 2;  // dataType + cellId + cpId
-constexpr uint32_t kRawLen = kRawHead + kSliceCount * kSliceSize;       // ≈ 4010 字节
+constexpr uint32_t kRawHead = sizeof(uint16_t) + sizeof(uint32_t) * 2;  // dataType + cellId + cpId = 10
 
 std::atomic<bool> g_stop{false};
 void OnSig(int) { g_stop.store(true); }
@@ -34,21 +34,21 @@ uint64_t NowUs() {
         std::chrono::steady_clock::now().time_since_epoch()).count());
 }
 
-// 构造 raw 帧：dataType + cellId + cpId + 500 切片（每切片填序号 i 用于校验）
+// 构造 raw 帧（32K）：head + 500 变长切片（大小取自 kCellCacheSizes，偏移与 data extractor 对齐）
 void BuildRaw(std::vector<uint8_t>& out, uint32_t cellId, uint32_t seq) {
-    out.resize(kRawLen);
+    out.resize(dts::data::kRawLen);
     uint16_t dataType = 0;  // CELL
     std::memcpy(out.data(), &dataType, sizeof(dataType));
     std::memcpy(out.data() + sizeof(uint16_t), &cellId, sizeof(cellId));
     uint32_t cpId = 0;
     std::memcpy(out.data() + sizeof(uint16_t) + sizeof(uint32_t), &cpId, sizeof(cpId));
-    // 500 切片：每切片 8 字节，填 (seq, i) 便于校验
-    for (uint32_t i = 0; i < kSliceCount; ++i) {
-        uint32_t off = kRawHead + i * kSliceSize;
-        uint32_t v0 = seq;
-        uint32_t v1 = i;
-        std::memcpy(out.data() + off, &v0, 4);
-        std::memcpy(out.data() + off + 4, &v1, 4);
+    // 500 切片：每切片按 kCellCacheSizes[i] 大小，填 seq 字节（0 填充）便于校验
+    uint32_t off = kRawHead;
+    for (uint16_t i = 0; i < dts::data::kCellDataIdCount; ++i) {
+        const uint16_t sz = dts::data::kCellCacheSizes[i];
+        std::memset(out.data() + off, static_cast<int>(seq & 0xff), sz);
+        out[off] = static_cast<uint8_t>(i & 0xff);  // 首 byte = dataId 序号
+        off += sz;
     }
 }
 
@@ -73,7 +73,7 @@ int main(int argc, char** argv) {
         return 1;
     }
 
-    std::printf("[spa-mock] waiting for static discovery... (raw=%uB, slices=%u)\n", kRawLen, kSliceCount);
+    std::printf("[spa-mock] waiting for static discovery... (raw=%uB, slices=%u)\n", dts::data::kRawLen, dts::data::kCellDataIdCount);
     std::this_thread::sleep_for(std::chrono::seconds(3));
 
     // 握手：通知 data 当前任务（taskId=1, status=1）
@@ -92,7 +92,7 @@ int main(int argc, char** argv) {
     uint32_t cellId = 1;
     while (!g_stop.load()) {
         BuildRaw(raw, 1 + (cellId % 10), static_cast<uint32_t>(sent));
-        if (comm.publish_external(ep, raw.data(), kRawLen) != 0) {
+        if (comm.publish_external(ep, raw.data(), dts::data::kRawLen) != 0) {
             ++fail;
         }
         ++sent;
@@ -108,9 +108,9 @@ int main(int argc, char** argv) {
     std::this_thread::sleep_for(std::chrono::seconds(1));  // 排空可靠投递
 
     const double durS = static_cast<double>(dur) / 1e6;
-    const double mbps = static_cast<double>(sent) * kRawLen / durS / (1024 * 1024);
+    const double mbps = static_cast<double>(sent) * dts::data::kRawLen / durS / (1024 * 1024);
     std::printf("[spa-mock] sent %llu frames (%.0f MB) in %.3fs -> %.0f msg/s, %.2f MB/s, fail=%u\n",
-                static_cast<unsigned long long>(sent), static_cast<double>(sent) * kRawLen / (1024 * 1024),
+                static_cast<unsigned long long>(sent), static_cast<double>(sent) * dts::data::kRawLen / (1024 * 1024),
                 durS, sent / durS, mbps, fail);
     return 0;
 }
