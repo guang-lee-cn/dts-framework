@@ -106,7 +106,6 @@ void DataMemManager::Init() {
         }
     };
     build(kCellSpecs, sizeof(kCellSpecs) / sizeof(kCellSpecs[0]));
-    build(kUeSpecs, sizeof(kUeSpecs) / sizeof(kUeSpecs[0]));
 
     // 分配每个 region 的池
     for (auto& r : m_impl->regions) {
