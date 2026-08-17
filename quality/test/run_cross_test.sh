@@ -19,8 +19,9 @@ echo "=== cross-process test start ==="
 "$DTS_BIN" "$DTS_CFG" > /tmp/dts_test.log 2>&1 &
 DTS_PID=$!
 
-# 等 dts 上电 + 静态发现（PDP/EDP 握手）
-sleep 3
+# 等 dts 上电 + 发现（PDP/EDP 握手）。余量 5s：沙箱/容器高负载下 3s 偶发不足
+# （reliable QoS 在 reader 匹配前发出的消息会被丢，表现为对端无回复）
+sleep 5
 
 "$NFOAM_BIN" "$NFOAM_CFG" > /tmp/nfoam_test.log 2>&1
 NFOAM_RC=$?

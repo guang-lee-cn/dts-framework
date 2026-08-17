@@ -21,7 +21,8 @@ uint64_t NowUs() {
 }
 }  // namespace
 
-// perf 压测发送端：以最大速率连发 count 个包（任务下发 msg1），末尾 DONE 标记
+// perf 压测发送端：以最大速率连发 count 个包（task 段 = msg7 配置变更；data 段 = msg3 raw），
+// 末尾 DONE 标记包。task 段回显 msg8、log 段回抛 msg6、data 段上报 msg4 由 perf_sub 量测。
 // 用法：perf_gen <perf-gen.json> <count> [size] [wait_s] [delay_us]
 int main(int argc, char** argv) {
     if (argc < 3) {
@@ -36,9 +37,10 @@ int main(int argc, char** argv) {
     const uint32_t delayUs = (argc >= 6) ? std::strtoul(argv[5], nullptr, 10) : 0;
     const bool toLog = (argc >= 7) && (std::strcmp(argv[6], "log") == 0);   // log 段：发 msg5
     const bool toData = (argc >= 7) && (std::strcmp(argv[6], "data") == 0);  // data 段：发 msg3
-    // 目标会话/消息：task 段 (task,1) / log 段 (log,5) / data 段 (data,3)
+    // 目标会话/消息：task 段 (task,7：配置变更 → task 回显 msg8) / log 段 (log,5) / data 段 (data,3)
+    // 注：task→data 的 msg2 已改进程内 mailbox 直通（外部不可观测），外部 task 基准走 msg7/msg8
     const char* sessionInst = toData ? SESSION_INST_DATA : (toLog ? SESSION_INST_LOG : SESSION_INST_TASK);
-    const uint32_t msgId = toData ? MSG_ID_AGENT_DATA : (toLog ? MSG_ID_LOG_COLLECT : MSG_ID_TASK_ACTIVE);
+    const uint32_t msgId = toData ? MSG_ID_AGENT_DATA : (toLog ? MSG_ID_LOG_COLLECT : MSG_ID_TASK_CONFIG);
     // datamix 标志在 argv[7]（mode 用 argv[6]，如 "data datamix 10 20"）
     const bool mix = (argc >= 8) && (std::strcmp(argv[7], "datamix") == 0);
     const uint32_t burstEvery = (argc >= 9) ? std::strtoul(argv[8], nullptr, 10) : 10;

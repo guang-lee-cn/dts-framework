@@ -18,6 +18,12 @@ inline constexpr uint32_t kPeriod5S = 50;
 // 超周期 TTL：加工缓存槽连续 N 个上报周期未更新即失效（防死数据占槽）
 inline constexpr uint32_t kTtlPeriods = 3;
 
+// 帧处理预算（需求口径：data 线程内单帧处理，出 mailbox → 处理完成，含业务代码）：
+//   kFrameBudgetWarnUs  预警阈值（接近上限，滚雪球信号）
+//   kFrameBudgetAlarmUs 告警阈值（超预算 = 确定性违约，计数上报 OAM）
+inline constexpr uint64_t kFrameBudgetWarnUs = 3000;
+inline constexpr uint64_t kFrameBudgetAlarmUs = 5000;
+
 // 加工缓存池上限（可配；容量核算 15~80MB < 100MB）
 inline constexpr size_t kMemCapBytes = 100 * 1024 * 1024;
 

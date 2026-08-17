@@ -56,21 +56,34 @@ std::vector<std::thread> g_sessions;
 constexpr int kConsoleBkgPrio = 20;  // BKG 域（15-29，SCHED_OTHER）
 constexpr int kPollTimeoutMs = 100;
 constexpr char kRespDelim = '\x00';  // 响应结束分隔符（长连接一条响应一个 \x00）
+constexpr size_t kMaxLineLen = 4096; // 单命令行上限（防恶意/误粘贴长行撑爆内存）
 
-// 读一行：累积到 '\n' 或 EOF/错误，返回有效行（不含 '\n'）
-bool ReadLine(int fd, std::string& line) {
+// 读一行：累积到 '\n' 或 EOF/错误，返回有效行（不含 '\n'）。
+// 行超长（> kMaxLineLen）：丢弃该行内容（继续读到 '\n'），置 overflow 由调用方回错误。
+bool ReadLine(int fd, std::string& line, bool& overflow) {
     line.clear();
+    overflow = false;
     char buf[256];
     while (true) {
         const ssize_t n = ::recv(fd, buf, sizeof(buf), 0);
         if (n <= 0) {
+            if (overflow) {
+                return false;  // 超长行未收完即断连：不交付
+            }
             return !line.empty();  // EOF：把残留行当一行
         }
         line.append(buf, static_cast<size_t>(n));
         const size_t nl = line.find('\n');
         if (nl != std::string::npos) {
+            if (overflow) {
+                return false;  // 超长行：整行丢弃（不执行）
+            }
             line.erase(nl);
             return true;
+        }
+        if (line.size() > kMaxLineLen) {
+            overflow = true;  // 超长：继续排空到 '\n'，之后整行丢弃
+            line.clear();
         }
     }
 }
@@ -91,12 +104,21 @@ void SessionLoop(int fd) {
     }
     while (!g_consoleStop.load()) {
         std::string line;
-        if (!ReadLine(fd, line) || line.empty()) {
-            break;  // EOF/关闭
+        bool tooLong = false;
+        if (!ReadLine(fd, line, tooLong) || line.empty()) {
+            break;  // EOF/关闭/超长行
         }
         auto job = std::make_shared<Job>();
-        job->line = line;
-        PushJob(job);
+        if (tooLong) {
+            job->line.clear();
+            job->resp = "ERR: line too long (max " + std::to_string(kMaxLineLen) + ")";
+            job->done = true;
+        } else {
+            job->line = line;
+        }
+        if (!job->done) {
+            PushJob(job);
+        }
         {
             std::unique_lock<std::mutex> lk(job->m);
             job->cv.wait(lk, [&job] { return job->done; });

@@ -8,7 +8,8 @@ namespace dts::data {
 
 void ReportAggregator::Add(uint16_t dataId, const void* cache, uint32_t len) {
     if (m_used + sizeof(SubHeader) + len > kCap) {
-        return;  // 超容丢弃该切片（MVP 不分片；500×12=6000 << 32k 不会触发）
+        m_drops.fetch_add(1, std::memory_order_relaxed);  // 超容丢切片：计数不静默
+        return;  // kCap=48K：500 dataId 全量（34778B）装得下；dataId 扩容时重新核算
     }
     SubHeader sh{dataId, static_cast<uint16_t>(len)};
     std::memcpy(m_buf.data() + m_used, &sh, sizeof(sh));

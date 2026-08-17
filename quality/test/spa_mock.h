@@ -9,7 +9,8 @@
 
 namespace dts {
 
-// 模拟 SPA 进程：业务写乒乓（2ms，帧带 dataType）+ dts-agent 独立库联编（读翻转 1s -> itran pub）
+// 模拟 SPA 进程：业务写乒乓（2ms，新布局 raw 帧）+ dts-agent 独立库联编
+// （读翻转 1s -> AgentPublish -> data 线程 msg3）+ 握手（TaskRequest -> data 建任务）
 class SpaMock {
 public:
     ~SpaMock();
@@ -20,8 +21,6 @@ public:
 
 private:
     void writerLoop();
-    static void buildCellFrame(std::vector<uint8_t>& out, uint16_t cellId, uint32_t prb);
-    static void buildUeFrame(std::vector<uint8_t>& out, uint16_t ueId, uint16_t bler);
 
     PingPongBuffer m_pingpong;
     AgentHandle m_agent = nullptr;

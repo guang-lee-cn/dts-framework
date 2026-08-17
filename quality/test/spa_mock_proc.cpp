@@ -34,18 +34,24 @@ uint64_t NowUs() {
         std::chrono::steady_clock::now().time_since_epoch()).count());
 }
 
-// 构造 raw 帧（32K）：head + 500 变长切片（大小取自 kCellCacheSizes，偏移与 data extractor 对齐）
-void BuildRaw(std::vector<uint8_t>& out, uint32_t cellId, uint32_t seq) {
-    out.resize(dts::data::kRawLen);
+// 构造 raw 帧：head + 500 变长切片（大小取自 kCellCacheSizes，偏移与 data extractor 对齐）。
+// rawLen 默认 kRawLen（32K）；受限环境（无 SHM/UDP 大包不可达）用 DTS_RAW_LEN 调小，
+// 越界切片由 DataFactory 跳过（见 data_factory_v2.cpp Extra<0 分支）。
+void BuildRaw(std::vector<uint8_t>& out, uint32_t cellId, uint32_t seq, uint32_t rawLen) {
+    out.resize(rawLen);
     uint16_t dataType = 0;  // CELL
     std::memcpy(out.data(), &dataType, sizeof(dataType));
     std::memcpy(out.data() + sizeof(uint16_t), &cellId, sizeof(cellId));
     uint32_t cpId = 0;
     std::memcpy(out.data() + sizeof(uint16_t) + sizeof(uint32_t), &cpId, sizeof(cpId));
-    // 500 切片：每切片按 kCellCacheSizes[i] 大小，填 seq 字节（0 填充）便于校验
+    // 500 切片：每切片按 kCellCacheSizes[i] 大小，填 seq 字节（0 填充）便于校验；
+    // 帧内放不下的切片不写（工厂侧越界跳过）
     uint32_t off = kRawHead;
     for (uint16_t i = 0; i < dts::data::kCellDataIdCount; ++i) {
         const uint16_t sz = dts::data::kCellCacheSizes[i];
+        if (off + sz > rawLen) {
+            break;
+        }
         std::memset(out.data() + off, static_cast<int>(seq & 0xff), sz);
         out[off] = static_cast<uint8_t>(i & 0xff);  // 首 byte = dataId 序号
         off += sz;
@@ -61,6 +67,11 @@ int main(int argc, char** argv) {
     }
     const long rounds = (argc >= 3) ? std::atol(argv[2]) : 1000;  // 0 = 持续到信号
     const int intervalUs = (argc >= 4) ? std::atoi(argv[3]) : 0;
+    // raw 帧长：默认 32K；受限环境（无 /dev/shm，UDP 大包不可达）用 DTS_RAW_LEN 调小
+    const char* rawLenEnv = std::getenv("DTS_RAW_LEN");
+    const uint32_t rawLen = rawLenEnv != nullptr
+                                ? static_cast<uint32_t>(std::strtoul(rawLenEnv, nullptr, 10))
+                                : dts::data::kRawLen;
     const bool steady = (rounds == 0);
     if (steady) {
         std::signal(SIGINT, OnSig);
@@ -73,7 +84,7 @@ int main(int argc, char** argv) {
         return 1;
     }
 
-    std::printf("[spa-mock] waiting for static discovery... (raw=%uB, slices=%u)\n", dts::data::kRawLen, dts::data::kCellDataIdCount);
+    std::printf("[spa-mock] waiting for static discovery... (raw=%uB, slices=%u)\n", rawLen, dts::data::kCellDataIdCount);
     std::this_thread::sleep_for(std::chrono::seconds(3));
 
     // 握手：通知 data 当前任务（taskId=1, status=1）
@@ -91,8 +102,8 @@ int main(int argc, char** argv) {
     uint32_t fail = 0;
     uint32_t cellId = 1;
     while (!g_stop.load()) {
-        BuildRaw(raw, 1 + (cellId % 10), static_cast<uint32_t>(sent));
-        if (comm.publish_external(ep, raw.data(), dts::data::kRawLen) != 0) {
+        BuildRaw(raw, 1 + (cellId % 10), static_cast<uint32_t>(sent), rawLen);
+        if (comm.publish_external(ep, raw.data(), rawLen) != 0) {
             ++fail;
         }
         ++sent;
@@ -108,9 +119,9 @@ int main(int argc, char** argv) {
     std::this_thread::sleep_for(std::chrono::seconds(1));  // 排空可靠投递
 
     const double durS = static_cast<double>(dur) / 1e6;
-    const double mbps = static_cast<double>(sent) * dts::data::kRawLen / durS / (1024 * 1024);
+    const double mbps = static_cast<double>(sent) * rawLen / durS / (1024 * 1024);
     std::printf("[spa-mock] sent %llu frames (%.0f MB) in %.3fs -> %.0f msg/s, %.2f MB/s, fail=%u\n",
-                static_cast<unsigned long long>(sent), static_cast<double>(sent) * dts::data::kRawLen / (1024 * 1024),
+                static_cast<unsigned long long>(sent), static_cast<double>(sent) * rawLen / (1024 * 1024),
                 durS, sent / durS, mbps, fail);
     return 0;
 }
