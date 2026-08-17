@@ -15,6 +15,9 @@ target_link_libraries(detmw PUBLIC
   ${FASTDDS_PREFIX}/lib/libfastdds.so /usr/local/lib/libfastcdr.so
   dts_log Threads::Threads)
 
+# 自研桶传输（DETMW_BUCKET=1 可选启用：共享内存环替代内置 SHM 数据面）
+target_link_libraries(detmw PRIVATE bucket)
+
 # 2 进程 demo：pub/sub 各跑一个实例（配置驱动 + 静态发现，产物 build/generated/detmw-demo）
 set(DETMW_DEMO_CFG_DIR ${CMAKE_CURRENT_SOURCE_DIR}/examples/demo)
 set(DETMW_DEMO_GEN_DIR ${CMAKE_BINARY_DIR}/generated/detmw-demo)

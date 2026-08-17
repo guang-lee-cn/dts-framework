@@ -11,6 +11,9 @@ add_compile_options(-Wall -Wextra -Werror)
 
 find_package(Threads REQUIRED)
 
+# 测试命令先行启用：所有子目录（含 thirdparty/bucket）的 add_test 都须在 enable_testing 之后
+enable_testing()
+
 # 工程构建组织
 add_subdirectory(infrastructure)          # 全局基础设施层
 add_subdirectory(contexts/task)           # 限界上下文：task
@@ -59,5 +62,4 @@ foreach(proc IN LISTS DTS_PROCS)
   add_dependencies(${exe} detmw_gen)
 endforeach()
 
-enable_testing()
 add_subdirectory(quality)

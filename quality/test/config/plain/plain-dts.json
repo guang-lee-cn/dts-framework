@@ -1,0 +1,8 @@
+{
+    "process": "plain-dts",
+    "domain": 7,
+    "peers": [ "plain-pub" ],
+    "topics": [
+        { "session_type": "DTS", "session_inst": "data", "msg_id": 9, "role": "subscribe", "thread": "data", "plain_size": 1024 }
+    ]
+}

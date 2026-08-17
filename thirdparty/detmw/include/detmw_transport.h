@@ -2,6 +2,8 @@
 
 #include <cstdint>
 #include <memory>
+#include <string>
+#include <unordered_map>
 
 #include "detmw.h"
 
@@ -22,9 +24,11 @@ struct TransportInterface {
     virtual int Send(const endpoint& ep, const uint8_t* data, uint32_t len) = 0;
 };
 
-// 传输工厂：实现方提供（FastDDS 等），Communicator 调用创建底层传输
-std::unique_ptr<TransportInterface> CreateFastDdsTransport(int domain_id,
-                                                           const char* process_name,
-                                                           const char* static_xml_path);
+// 传输工厂：实现方提供（FastDDS 等），Communicator 调用创建底层传输。
+// plain_topics：topic 名 → 定长 plain 大小（>0 = 定长零拷贝候选通道，严格等长；
+// 缺省/0 = 可变长 BytesType 兼容通道）。topic 名规则同 MakeTopic（sessionType_sessionInst_msgId）
+std::unique_ptr<TransportInterface> CreateFastDdsTransport(
+    int domain_id, const char* process_name, const char* static_xml_path,
+    const std::unordered_map<std::string, uint32_t>& plain_topics);
 
 }  // namespace detmw

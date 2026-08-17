@@ -115,12 +115,13 @@ def main():
         odir = os.path.join(out_dir, proc)
         os.makedirs(odir, exist_ok=True)
 
-        # 线程路由头：按 thread 分组，Sub/Pub 分表
+        # 线程路由头：按 thread 分组，Sub/Pub 分表。
+        # 三个线程头**恒定生成**（无路由 = 空表）：startup 无条件 include 全部三个
+        # （run.cpp 引 task/data/log_routes.h），缺头会让纯单线程进程编不过
         for inst in INSTS:
             routes = [(t.get("session_type"), t.get("session_inst"), t.get("msg_id"), t.get("role"))
                       for t in p["topics"] if t.get("thread") == inst and t.get("msg_id") is not None]
-            if routes:
-                gen_routes_h(proc, inst, routes, os.path.join(odir, f"{inst}_routes.h"))
+            gen_routes_h(proc, inst, routes, os.path.join(odir, f"{inst}_routes.h"))
 
         # 进程生成配置：源配置 + 端点 ID（detmw 运行时加载）
         out_json = os.path.join(odir, f"{proc}.json")

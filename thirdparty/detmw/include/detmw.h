@@ -52,8 +52,9 @@ public:
     // 发（进程外）：走 DDS，序列化 + 传输
     int publish_external(const endpoint& dst, const uint8_t* data, uint32_t len);
 
-    // 发（进程内）：目标为本进程某线程。当前走 transport（DDS 回环），
-    // mailbox 直通免序列化为后续优化（契约 detmw.md §3，接收仍走 OnRouteMsg 统一路由）
+    // 发（进程内）：目标为本进程某线程。命中本进程订阅者 → mailbox 直投（免 DDS
+    // 序列化，D7/D8）；未命中 → 回退 transport（对端可能在别的进程）。
+    // 接收侧不变：仍经订阅回调 OnRouteMsg 统一路由进目标线程 mailbox（契约 detmw.md §3）
     int publish_internal(const endpoint& dst, const uint8_t* data, uint32_t len);
 
     // 调试：dump 配置端点
