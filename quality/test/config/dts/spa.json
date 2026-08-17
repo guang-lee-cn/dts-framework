@@ -1,8 +1,45 @@
 {
     "process": "spa",
     "domain": 1,
-    "peers": [ "dts-test", "nfoam" ],
+    "peers": [
+        "dts-test",
+        "nfoam"
+    ],
     "topics": [
-        { "session_type": "DTS", "session_inst": "data", "msg_id": 3, "role": "publish", "thread": "data" }
+        {
+            "session_type": "DTS",
+            "session_inst": "data",
+            "msg_id": 2,
+            "role": "publish",
+            "thread": "data"
+        },
+        {
+            "session_type": "DTS",
+            "session_inst": "data",
+            "msg_id": 3,
+            "role": "publish",
+            "thread": "data"
+        },
+        {
+            "session_type": "DTS",
+            "session_inst": "data",
+            "msg_id": 4,
+            "role": "subscribe",
+            "thread": "data"
+        },
+        {
+            "session_type": "DTS",
+            "session_inst": "oam",
+            "msg_id": 10,
+            "role": "publish",
+            "thread": "data"
+        },
+        {
+            "session_type": "DTS",
+            "session_inst": "oam",
+            "msg_id": 11,
+            "role": "subscribe",
+            "thread": "data"
+        }
     ]
 }

@@ -67,6 +67,34 @@
             "msg_id": 8,
             "role": "publish",
             "thread": "task"
+        },
+        {
+            "session_type": "DTS",
+            "session_inst": "task",
+            "msg_id": 1,
+            "role": "publish",
+            "thread": "task"
+        },
+        {
+            "session_type": "DTS",
+            "session_inst": "data",
+            "msg_id": 3,
+            "role": "publish",
+            "thread": "data"
+        },
+        {
+            "session_type": "DTS",
+            "session_inst": "oam",
+            "msg_id": 10,
+            "role": "subscribe",
+            "thread": "data"
+        },
+        {
+            "session_type": "DTS",
+            "session_inst": "oam",
+            "msg_id": 11,
+            "role": "publish",
+            "thread": "data"
         }
     ]
 }

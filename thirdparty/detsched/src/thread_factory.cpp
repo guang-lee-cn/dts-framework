@@ -9,6 +9,7 @@
 #include <algorithm>
 #include <atomic>
 #include <cstdio>
+#include <cstdlib>   // getenv：DTS_STRICT_SCHED
 #include <cstring>
 #include <string>
 #include <utility>
@@ -134,8 +135,18 @@ ThreadHandle ThreadFactory::CreateThread(const std::string& name, int prioLevel,
 
     int rc = pthread_create(&h->m_tid, &attr, Entry, h);
     if (rc == EPERM && policy != SCHED_OTHER) {
-        // RT 权限不足（容器/非 root 无 CAP_SYS_NICE）：降级普通调度，保证 dev/test 可跑；
-        // 生产有 RT 权限时仍走 RT，确定性语义不变
+        // RT 权限不足（容器/非 root 无 CAP_SYS_NICE）。
+        // 默认降级普通调度（dev/test 可跑，生产有 RT 权限时仍走 RT，确定性语义不变）；
+        // DTS_STRICT_SCHED=1 严格模式：RT 不可用 = 部署/配置错误 → 拒绝启动（商用 fail-fast，
+        // 无确定性保证时不许静默运行）
+        if (std::getenv("DTS_STRICT_SCHED") != nullptr) {
+            dts::log::Error("[detsched] {}: RT create failed ({}) and DTS_STRICT_SCHED=1: "
+                            "refusing to run without real-time scheduling (fail-fast)",
+                            name.c_str(), std::strerror(rc));
+            pthread_attr_destroy(&attr);
+            delete h;
+            return nullptr;
+        }
         dts::log::Warn("[detsched] {}: RT create failed ({}), fallback to SCHED_OTHER",
                      name.c_str(), std::strerror(rc));
         pthread_attr_destroy(&attr);
