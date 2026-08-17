@@ -9,8 +9,12 @@
 
 namespace dts {
 
-// 线程入口：外部消息 -> 线程业务（对齐统一回调接口）
-using EntryFn = void (*)(ThreadStatus status, uint32_t msgId, const uint8_t* msg, uint32_t len);
+// 线程入口：外部消息 -> 线程业务（对齐统一回调接口）。
+// sessionInst = 业务组（第二层路由，msg 所属端点；nullptr = 线程本地消息如 TIMER）。
+// msg 非 const：mailbox 已移所有权给本线程，业务处理允许原地修改（三级路由表
+// MsgHandlerFn 同签名，见 msg_table.h）；无载荷时为 nullptr
+using EntryFn = void (*)(ThreadStatus status, const char* sessionInst, uint32_t msgId,
+                         void* msg, uint32_t len);
 
 // 线程业务上下文：消息处理（mailbox/状态机/entry 分发）。不依赖 detsched。
 struct ThreadCtx {

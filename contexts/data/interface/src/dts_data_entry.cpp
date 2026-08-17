@@ -4,8 +4,9 @@
 
 namespace dts {
 
-void DataEntry(ThreadStatus status, uint32_t msgId, const uint8_t* msg, uint32_t len) {
-    DataMsgHandlerDispatch(status, msgId, msg, len);
+void DataEntry(ThreadStatus status, const char* sessionInst, uint32_t msgId, void* msg,
+               uint32_t len) {
+    DataMsgHandlerDispatch(status, sessionInst, msgId, msg, len);
 }
 
 }  // namespace dts

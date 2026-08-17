@@ -29,7 +29,8 @@ bootstrap [Run/Stop + Process]   ← 装配/下电/生命周期
 
 | 模块 | 能力 |
 |---|---|
-| detmw v2 | 双 API（publish_external DDS / publish_internal 进程内）+ 统一 endpoint 寻址 + TransportInterface 隔离 |
+| 三级消息路由 | sessionType → sessionInst → msgId 表驱动：`{data\|task\|log}_msg_handler.cpp` 里 `{msgId, 处理函数}` 一行一消息流，新增业务 = 加一行；console `get_handlers` 可查 |
+| detmw v2 | 双 API（publish_external DDS / publish_internal 进程内 mailbox 直通免序列化）+ 统一 endpoint 寻址 + TransportInterface 隔离 |
 | 日志 | dts::log 门面（业务零 spdlog 直接调用）+ TsRotatingSink（时间戳文件+5MB 切分+总量删旧）|
 | 控制面 | CommandExecutor 命令表 + console socket（AF_UNIX 长连接）+ control 执行线程 + `dts-cli.py`（login REPL / exec / ps）|
 | data 数据工厂 | 500 dataId 切分（4-200B 随机）+ DataMemManager 静态池（hash 槽位 + TTL）+ ReportAggregator 合并上报 |
@@ -39,8 +40,11 @@ bootstrap [Run/Stop + Process]   ← 装配/下电/生命周期
 
 ```bash
 cmake -B build && cmake --build build -j
-ctest --test-dir build              # integration / cross_process / s_level_perf
+ctest --test-dir build              # unit×3 / integration / cross_process / s_level_perf
 ```
+
+> 受限环境（无 /dev/shm，32K UDP 不可达）：`s_level_perf` 可用 `DTS_RAW_LEN=1024`
+> 验证链路逻辑（32K 真实工况需 /dev/shm 或大 MTU）。
 
 依赖：Fast-DDS 3.x（/usr/local）、spdlog（pkg-config）、C++17。
 

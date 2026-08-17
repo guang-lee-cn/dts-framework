@@ -56,19 +56,27 @@ int detmw_dump(detmw_handle* h, char* buf, size_t cap);
 - `detmw_subscribe` 失败返回非 0，调用方不得保留悬挂回调上下文
 - 参数语义：subscribe 的 endpoint 是"来源"，publish 的 endpoint 是"目的"（方向由动词 + 参数名表达）
 
-## 3. 进程内直通 API（D7/D8）
+## 3. 进程内直通 API（D7/D8）✅ 已落地 2026-08-16
 
 ```cpp
-// 发（进程内）：线程 mailbox 直通，免序列化。调用方直接选，运行时零查表。
-int detmw_publish_inner(detmw_handle* h, uint32_t msg_id,
-                        const uint8_t* data, uint32_t len);
+// 发（进程内）：目标为本进程某线程。命中本进程订阅者 → 直接调订阅回调（mailbox 直投），
+// 免 DDS 序列化/传输/反序列化；未命中 → 回退 transport（对端可能在别的进程）。
+int publish_internal(const detmw_endpoint& dst, const uint8_t* data, uint32_t len);
 ```
 
+**实现（detmw.cpp）**：`Communicator::subscribe()` 成功时把 (endpoint → 回调) 登记进
+`Impl::localSubs`（mutex 保护）；`publish_internal()` 命中 localSubs 即逐订阅者调用回调
+（`OnRouteMsg` → mailbox.Send，一次拷贝 + 移所有权），返回 0；未命中回退 `transport->Send`。
+
 **约束**：
-- 仅用于"目标在本进程某线程"的消息；进程外一律用 `detmw_publish`
+- 仅用于"目标在本进程某线程"的消息；进程外一律用 `publish_external`
 - 接收侧无感知：消息同样进目标线程 mailbox（与 DDS 消息无差别）
 - 调用方负责选对 API，detmw 不做本地/外部映射判断
-- **接收统一入口**：无论 `publish_external` / `publish_internal`，目标线程都经订阅回调（bootstrap 的 OnRouteMsg 路由）进 mailbox，全系统唯一投递点。mailbox 直通只允许是 transport 内部的投递优化（命中本进程订阅者时免 DDS 序列化），不得在业务代码旁路订阅回调另开投递入口
+- **接收统一入口**：无论 `publish_external` / `publish_internal`，目标线程都经订阅回调
+  （bootstrap 的 OnRouteMsg 路由）进 mailbox，全系统唯一投递点。直通只发生在 transport
+  之上的 Communicator 层（命中本进程订阅者），业务代码不得旁路订阅回调另开投递入口
+- **外部不可观测**：直通消息不再出现在 DDS 通道上，外部进程订阅同一 endpoint 收不到
+  （任务激活 msg2 即此语义；外部往返走 msg7/msg8）
 
 ## 4. 控制通道（D2）
 

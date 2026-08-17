@@ -23,35 +23,47 @@ void ThreadEntry(void* arg) {
 
 void ThreadRun(ThreadCtx* ctx) {
     dts::log::Info("[{}] thread up, state=IDLE, waiting for msg", ctx->m_name.c_str());
+    // 维护节拍（100ms）：**绝对期限**——到点必投 MSG_ID_TIMER，消息多密都准点。
+    // （相对期限 wait_until(now+100ms) 在持续负载下永不超时 → TTL 回收等维护任务停摆）
+    auto nextTick = std::chrono::steady_clock::now() + std::chrono::milliseconds(100);
     while (!ctx->m_stop.load()) {
+        // 1) 维护节拍：到点强制投递（优先于消息处理，保 TTL/维护准点；
+        //    投递 jitter ≤ 单条消息处理时间，由各线程预算兜底）
+        if (std::chrono::steady_clock::now() >= nextTick) {
+            if (ctx->m_entry != nullptr) {
+                ctx->m_entry(ctx->m_status.load(), nullptr, MSG_ID_TIMER, nullptr, 0);
+            }
+            // 追赶：处理慢导致跨过多个节拍时跳过（维护任务幂等），不连投
+            do {
+                nextTick += std::chrono::milliseconds(100);
+            } while (nextTick <= std::chrono::steady_clock::now());
+        }
+
+        // 2) 等消息（带绝对期限：到点由 1) 处理，不阻塞节拍）
         MailMsg msg;
         bool got = false;
-        bool timeout = false;
         {
             std::unique_lock<std::mutex> lk(ctx->m_mailbox.m_mutex);
-            timeout = !ctx->m_mailbox.m_cv.wait_until(
-                lk, std::chrono::steady_clock::now() + std::chrono::milliseconds(100),
-                [&] { return !ctx->m_mailbox.EmptyLocked() || ctx->m_stop.load(); });
+            ctx->m_mailbox.m_cv.wait_until(lk, nextTick, [&] {
+                return !ctx->m_mailbox.EmptyLocked() || ctx->m_stop.load();
+            });
             got = ctx->m_mailbox.TryPopLocked(msg);
-        }
-        // 超时（无消息）：投递定时 tick，驱动业务线程 TimerWheel（不阻塞，固定 100ms 节拍）
-        if (!got && timeout && ctx->m_entry != nullptr) {
-            ctx->m_entry(ctx->m_status.load(), MSG_ID_TIMER, nullptr, 0);
-            continue;
         }
         if (!got) continue;
 
-        // 状态消息：更新线程状态（消息仍转发，状态动作 fn 挂在 msg_handler）
+        // 3) 状态消息：更新线程状态（消息仍转发，状态动作 fn 挂在 msg_handler）
         if (msg.msgId == MSG_ID_STATUS && msg.payload && msg.payload->size() >= sizeof(StatusMsg)) {
             const auto* st = reinterpret_cast<const StatusMsg*>(msg.payload->data());
             ctx->m_status.store(st->status);
             dts::log::Info("[{}] state -> {}", ctx->m_name.c_str(), static_cast<int>(st->status));
         }
 
+        // 4) 业务消息（sessionInst 由路由盖章，见 OnRouteMsg）
         if (ctx->m_entry != nullptr) {
-            const uint8_t* p = (msg.payload && !msg.payload->empty()) ? msg.payload->data() : nullptr;
+            // 非 const：payload 所有权已移交给本线程，业务可原地处理（见 EntryFn 注释）
+            void* p = (msg.payload && !msg.payload->empty()) ? msg.payload->data() : nullptr;
             const uint32_t n = msg.payload ? static_cast<uint32_t>(msg.payload->size()) : 0;
-            ctx->m_entry(ctx->m_status.load(), msg.msgId, p, n);
+            ctx->m_entry(ctx->m_status.load(), msg.sessionInst, msg.msgId, p, n);
         }
     }
 }

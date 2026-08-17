@@ -174,18 +174,24 @@ void control_stop();
 
 ## 5. contexts 接口
 
-### 5.1 线程入口统一形态（interface，现状保留）✅
+### 5.1 线程入口统一形态（interface，三级路由业务组消息表驱动）✅
 
 ```cpp
 namespace dts {
 // 每 context 一个 detsched 线程；ThreadCtx.m_mailbox 收消息，ThreadRun 消费后调入口。
-using EntryFn = void (*)(ThreadStatus status, uint32_t msgId, const uint8_t* msg, uint32_t len);
-void TaskEntry(ThreadStatus, uint32_t msgId, const uint8_t*, uint32_t);
-void DataEntry(ThreadStatus, uint32_t msgId, const uint8_t*, uint32_t);
-void LogEntry(ThreadStatus, uint32_t msgId, const uint8_t*, uint32_t);
+// 路由语义：sessionType 线程内固定（"DTS"）；sessionInst = 业务组（线程可挂多组，
+// mailbox 消息携带）；msgId = 组内具体业务（msg_table.h：FindSessionTable 选组 →
+// 组内 {msgId, func(void* data, uint32_t len)} 查表），一行一消息流，
+// 新增业务流程 = 组内表加一行（见 {task|data|log}_msg_handler.cpp）。
+using EntryFn = void (*)(ThreadStatus status, const char* sessionInst, uint32_t msgId,
+                         void* msg, uint32_t len);
+void TaskEntry(ThreadStatus, const char*, uint32_t, void*, uint32_t);
+void DataEntry(ThreadStatus, const char*, uint32_t, void*, uint32_t);
+void LogEntry(ThreadStatus, const char*, uint32_t, void*, uint32_t);
 }
 ```
-约束：entry 只转发；业务在 application（`*MsgHandlerDispatch` 按 msgId 直分）。
+约束：entry 只转发；业务在 application（`*MsgHandlerDispatch` 按 sessionInst 选组 →
+组内按 msgId 直分）。线程本地消息（MSG_ID_TIMER）不属业务组。
 
 ### 5.2 data 子系统接口边界（预留接口 + 契约）⚠️ **内部待 ISO 重设计 ← data 窗口输入**
 

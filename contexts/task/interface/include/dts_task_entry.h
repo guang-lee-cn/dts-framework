@@ -6,7 +6,9 @@
 
 namespace dts {
 
-// task 线程接入层入口：status 已知、msgId 已知，几行转发到 msg_handler
-void TaskEntry(ThreadStatus status, uint32_t msgId, const uint8_t* msg, uint32_t len);
+// task 线程接入层入口：status/sessionInst(业务组)/msgId 已知，几行转发到 msg_handler
+// （msg 非 const，可原地处理）
+void TaskEntry(ThreadStatus status, const char* sessionInst, uint32_t msgId, void* msg,
+               uint32_t len);
 
 }  // namespace dts
