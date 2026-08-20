@@ -322,7 +322,14 @@ bool BucketTransport::OpenInputChannel(
 
     try
     {
-        input_channels_.push_back(create_channel(locator, max_msg_size, receiver));
+        // FastDDS 非 secure 模式传 max_msg_size=UINT32_MAX（NetworkFactory 的 min() 两端
+        // 都是上限值，不封顶；内置 SHM 同样收 UINT32_MAX，但它从段内零拷贝读、不预分配）。
+        // 本传输收线程预分配接收缓冲 -> 必须钳制到配置 maxMessageSize，否则每通道
+        // 4GB × 3 通道直接 OOM（2026-08-20 WSL 实证：sub 12.4GB 常驻，VM 崩溃）
+        const uint32_t effective_max = max_msg_size < configuration_.maxMessageSize
+                ? max_msg_size
+                : configuration_.maxMessageSize;
+        input_channels_.push_back(create_channel(locator, effective_max, receiver));
     }
     catch (const std::exception&)
     {
