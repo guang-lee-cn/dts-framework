@@ -15,6 +15,10 @@ if ! (umask 0; : > /dev/shm/.dts_shm_probe 2>/dev/null); then
 fi
 rm -f /dev/shm/.dts_shm_probe
 
+# 内存护栏（工具载体，2026-08-20 OOM 教训：收缓冲曾按 UINT32_MAX 分配，12GB/进程崩机）。
+# 3GB 虚拟上限 ≈ 实测 RSS(~200MB) 的 10 倍余量；不够用时先查泄漏，不是调大帽子
+ulimit -v 3145728 2>/dev/null || true
+
 echo "=== bucket RTPS e2e (count=$COUNT size=$SIZE) start ==="
 "$TEST_BIN" sub "$COUNT" "$SIZE" 30 > /tmp/bucket_sub.log 2>&1 &
 SUB_PID=$!
