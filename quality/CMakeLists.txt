@@ -27,6 +27,7 @@ set(DTS_TEST_GEN_OUTPUTS
   ${DTS_TEST_GEN_DIR}/dts-test/task_routes.h
   ${DTS_TEST_GEN_DIR}/dts-test/data_routes.h
   ${DTS_TEST_GEN_DIR}/dts-test/log_routes.h
+  ${DTS_TEST_GEN_DIR}/dts-test/control_routes.h
   ${DTS_TEST_GEN_DIR}/dts-test/dts-test.json
   ${DTS_TEST_GEN_DIR}/dts-test/staticdiscovery.xml
   ${DTS_TEST_GEN_DIR}/nfoam/task_routes.h
@@ -126,6 +127,7 @@ set(TUNE_GEN_OUTPUTS
   ${TUNE_GEN_DIR}/tune-dts/task_routes.h
   ${TUNE_GEN_DIR}/tune-dts/data_routes.h
   ${TUNE_GEN_DIR}/tune-dts/log_routes.h
+  ${TUNE_GEN_DIR}/tune-dts/control_routes.h
   ${TUNE_GEN_DIR}/tune-dts/tune-dts.json
   ${TUNE_GEN_DIR}/tune-dts/staticdiscovery.xml
   ${TUNE_GEN_DIR}/tune-spa/tune-spa.json
@@ -203,6 +205,7 @@ set(PLAIN_GEN_DIR ${CMAKE_BINARY_DIR}/generated/detmw-plain)
 
 set(PLAIN_GEN_OUTPUTS
   ${PLAIN_GEN_DIR}/plain-dts/data_routes.h
+  ${PLAIN_GEN_DIR}/plain-dts/control_routes.h
   ${PLAIN_GEN_DIR}/plain-dts/plain-dts.json
   ${PLAIN_GEN_DIR}/plain-dts/staticdiscovery.xml
   ${PLAIN_GEN_DIR}/plain-pub/plain-pub.json

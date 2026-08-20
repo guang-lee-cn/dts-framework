@@ -30,6 +30,7 @@
 #include "task_routes.h"
 #include "data_routes.h"
 #include "log_routes.h"
+#include "control_routes.h"
 
 namespace dts {
 
@@ -70,7 +71,7 @@ struct Worker {
 // ---- 订阅：detmw 端点 + 目标线程 mailbox。独立概念，Process 统一持有 ----
 struct Subscription {
     detmw::endpoint ep;
-    ThreadCtx* thread;  // 目标线程 mailbox（回调投递目标）
+    ThreadCtx* thread;  // 目标线程 mailbox（业务订阅）；DDS 控制通道不填（OnRouteCtl 直投 control 队列）
 };
 
 // console socket 路径：cfg 文件名派生（cpf-dts.json -> /tmp/dts-cpf-dts.sock），多实例不冲突
@@ -97,6 +98,13 @@ void OnRouteMsg(void* userCtx, std::unique_ptr<std::vector<uint8_t>> data) {
         return;
     }
     sub->thread->m_mailbox.Send(sub->ep.msg_id, std::move(data), sub->ep.session_inst.c_str());
+}
+
+// DDS 控制通道回调（P1-3，D2/R5）：网管远程命令 -> control 命令队列。
+// 不走业务线程 mailbox（D5：运维不进业务线程），执行收敛 control 线程 ctl::Execute（D3）；
+// 载荷即命令行文本（console 兼容），control 执行完经 DTS.oam 发布响应（console.cpp）
+void OnRouteCtl(void*, std::unique_ptr<std::vector<uint8_t>> data) {
+    control_submit_dds(std::move(data));
 }
 
 // ---- 控制面：get_handlers —— 查看三级路由（sessionType 固定 · sessionInst 业务组 → msgId 表）----
@@ -206,8 +214,11 @@ struct Process {
         if (dts::console_start(console_sock) != 0) {
             dts::log::Error("[Run] console start failed (sock={})", console_sock);
         }
-        if (dts::control_start() != 0) {
-            dts::log::Error("[Run] control start failed");
+        // DDS 控制通道（P1-3，D2/R5）：control 线程在才开；不在则降级（无远程控制，本地业务不受影响）
+        if (dts::control_start() == 0) {
+            RegisterCtlRoutes();
+        } else {
+            dts::log::Error("[Run] control start failed (DDS control channel disabled)");
         }
         // 命令表登记：业务线程消息表展示 + data 处理统计（bootstrap 组装，contexts 无反向依赖）
         dts::ctl::CommandRegistry::Instance().Register(
@@ -253,7 +264,7 @@ private:
         detsched::DestroyThread(w.h);
     }
 
-    // 订阅登记：生成路由头 Sub 表（可能为空表——gen_detmw.py 恒定生成三线程头）
+    // 订阅登记：生成路由头 Sub 表（可能为空表——gen_detmw.py 恒定生成四线程头）
     template <typename RouteArray>
     void RegisterSubRoutes(ThreadCtx& thread, const char* session_type,
                            const RouteArray* routes, size_t count) {
@@ -265,6 +276,21 @@ private:
                 subs.push_back(std::move(sub));
             } else {
                 dts::log::Error("[Run] subscribe failed: {}", sub->ep.ToString());
+            }
+        }
+    }
+
+    // DDS 控制通道订阅（config thread="control" 的 Sub 表，可能为空表）：OnRouteCtl 直投
+    // control 命令队列（不绑业务线程 mailbox，D5）
+    void RegisterCtlRoutes() {
+        for (size_t i = 0; i < kControlSubRouteCount; i++) {
+            auto sub = std::make_unique<Subscription>();
+            sub->ep = detmw::endpoint{SESSION_TYPE_DTS, kControlSubRoutes[i].sessionInst,
+                                      kControlSubRoutes[i].msgId};
+            if (comm->subscribe(sub->ep, OnRouteCtl, sub.get()) == 0) {
+                subs.push_back(std::move(sub));
+            } else {
+                dts::log::Error("[Run] control subscribe failed: {}", sub->ep.ToString());
             }
         }
     }

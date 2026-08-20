@@ -81,6 +81,20 @@
             "msg_id": 11,
             "role": "publish",
             "thread": "data"
+        },
+        {
+            "session_type": "DTS",
+            "session_inst": "oam",
+            "msg_id": 12,
+            "role": "subscribe",
+            "thread": "control"
+        },
+        {
+            "session_type": "DTS",
+            "session_inst": "oam",
+            "msg_id": 13,
+            "role": "publish",
+            "thread": "control"
         }
     ]
 }

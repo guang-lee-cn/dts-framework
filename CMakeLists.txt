@@ -34,11 +34,13 @@ set(DETMW_GEN_OUTPUTS
   ${DETMW_GEN_DIR}/cpf-dts/task_routes.h
   ${DETMW_GEN_DIR}/cpf-dts/data_routes.h
   ${DETMW_GEN_DIR}/cpf-dts/log_routes.h
+  ${DETMW_GEN_DIR}/cpf-dts/control_routes.h
   ${DETMW_GEN_DIR}/cpf-dts/cpf-dts.json
   ${DETMW_GEN_DIR}/cpf-dts/staticdiscovery.xml
   ${DETMW_GEN_DIR}/dpf-dts/task_routes.h
   ${DETMW_GEN_DIR}/dpf-dts/data_routes.h
   ${DETMW_GEN_DIR}/dpf-dts/log_routes.h
+  ${DETMW_GEN_DIR}/dpf-dts/control_routes.h
   ${DETMW_GEN_DIR}/dpf-dts/dpf-dts.json
   ${DETMW_GEN_DIR}/dpf-dts/staticdiscovery.xml)
 add_custom_command(

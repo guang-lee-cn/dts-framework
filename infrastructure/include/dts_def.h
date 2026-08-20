@@ -23,6 +23,11 @@ constexpr uint32_t MSG_ID_TASK_RESPONSE    = 0x0008;  // task -> nfoam 响应 JS
 constexpr uint32_t MSG_ID_TIMER            = 0x0009;  // 线程定时 tick（ThreadRun 100ms 超时投递）
 constexpr uint32_t MSG_ID_OAM_STATS_REQ    = 0x000A;  // 网管 -> data(oam 业务组)：请求指标
 constexpr uint32_t MSG_ID_OAM_STATS_RESP   = 0x000B;  // data(oam 业务组) -> 网管：指标响应
+// 远程控制通道（P1-3，D2/R5）：网管 -> control 线程，载荷 = console 兼容命令行文本
+// （"name arg1 arg2"，ctl::Execute 语法）；响应载荷 = "cmd=<命令行>\n<Execute 输出>"。
+// 命令执行收敛 control 线程 CommandExecutor（D3：命令一处定义，socket/DDS 两条传输）。
+constexpr uint32_t MSG_ID_OAM_CMD_REQ      = 0x000C;  // 网管 -> control：远程命令行
+constexpr uint32_t MSG_ID_OAM_CMD_RESP     = 0x000D;  // control -> 网管：命令执行结果
 
 // ---- 会话：统一寻址键 detmw::endpoint（detmw.h，== / hash / ToString 内置）----
 constexpr const char* SESSION_TYPE_DTS  = "DTS";

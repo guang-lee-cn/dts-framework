@@ -2,6 +2,8 @@
 #include <chrono>
 #include <cstdio>
 #include <cstring>
+#include <mutex>
+#include <string>
 #include <thread>
 #include <vector>
 
@@ -22,6 +24,11 @@ constexpr uint16_t kSlices = 8;  // 只发前 8 个 dataId 切片（其余越界
 std::atomic<int> g_reportCount{0};
 std::atomic<int> g_oamRespCount{0};
 
+// oam 远程命令响应（msg13：control 线程 DDS 控制通道执行结果，载荷 "cmd=<line>\n<out>"）
+std::mutex g_oamCmdM;
+std::string g_oamCmdResp;
+std::atomic<int> g_oamCmdCount{0};
+
 // 上报回调（msg4：data 线程合并上报出口）
 void OnReport(void*, std::unique_ptr<std::vector<uint8_t>> data) {
     g_reportCount.fetch_add(1);
@@ -40,6 +47,42 @@ void OnOamStatsResp(void*, std::unique_ptr<std::vector<uint8_t>> data) {
         std::printf("\n");
     }
     std::fflush(stdout);
+}
+
+// oam 远程命令响应回调（msg13：control 线程 DDS 控制通道，P1-3）
+void OnOamCmdResp(void*, std::unique_ptr<std::vector<uint8_t>> data) {
+    if (!data || data->empty()) {
+        return;
+    }
+    {
+        std::lock_guard<std::mutex> lk(g_oamCmdM);
+        g_oamCmdResp.assign(data->begin(), data->end());
+    }
+    g_oamCmdCount.fetch_add(1);
+    std::printf("[spa] oam cmd response (%u bytes):\n",
+                static_cast<uint32_t>(data->size()));
+    std::fflush(stdout);
+}
+
+// 远程命令往返：发命令行（msg12）-> 等响应（msg13）。重发自愈（发现窗口期消息可丢）；
+// 超时返回空串
+std::string OamCmdRoundtrip(detmw::Communicator& comm, const char* cmd) {
+    g_oamCmdCount.store(0);
+    const std::string line = cmd;
+    for (int i = 0; i < 3 && g_oamCmdCount.load() == 0; ++i) {
+        if (comm.publish_external(detmw::endpoint{SESSION_TYPE_DTS, SESSION_INST_OAM,
+                                                  MSG_ID_OAM_CMD_REQ},
+                                  reinterpret_cast<const uint8_t*>(line.data()),
+                                  static_cast<uint32_t>(line.size())) != 0) {
+            return "";
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(500));
+    }
+    for (int i = 0; i < 30 && g_oamCmdCount.load() == 0; ++i) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    }
+    std::lock_guard<std::mutex> lk(g_oamCmdM);
+    return g_oamCmdResp;
 }
 
 // 构造 raw 帧：新布局 [u16 dataType=CELL][u32 cellId][u32 cpId][Σ切片]
@@ -66,7 +109,8 @@ void BuildRaw(std::vector<uint8_t>& out) {
 }  // namespace
 
 // spa 测试进程：握手（TaskRequest → data 建任务）→ 发 rawData(msg3, 新布局小帧)
-// → 自收上报(msg4) 断言端到端 data 链路（真实消费，非仅投递）。
+// → 自收上报(msg4) 断言端到端 data 链路（真实消费，非仅投递）
+// → oam 指标拉取（msg10/11，data 线程 oam 组）→ 远程命令往返（msg12/13，control 线程）。
 // 用法：spa_test <spa.json>
 int main(int argc, char** argv) {
     if (argc < 2) {
@@ -85,6 +129,12 @@ int main(int argc, char** argv) {
     if (comm.subscribe(detmw::endpoint{SESSION_TYPE_DTS, SESSION_INST_OAM, MSG_ID_OAM_STATS_RESP},
                        OnOamStatsResp, nullptr) != 0) {
         std::printf("[spa] subscribe oam resp failed\n");
+        return 1;
+    }
+    // 订阅 oam 远程命令响应（msg13：control 线程 DDS 控制通道）
+    if (comm.subscribe(detmw::endpoint{SESSION_TYPE_DTS, SESSION_INST_OAM, MSG_ID_OAM_CMD_RESP},
+                       OnOamCmdResp, nullptr) != 0) {
+        std::printf("[spa] subscribe oam cmd resp failed\n");
         return 1;
     }
 
@@ -153,5 +203,25 @@ int main(int argc, char** argv) {
     const bool oamOk = g_oamRespCount.load() > 0;
     std::printf("[spa] %s\n",
                 oamOk ? "PASS (oam stats pull verified)" : "FAIL (no oam stats response)");
-    return (ok && oamOk) ? 0 : 1;
+
+    // ---- 远程控制通道（P1-3，D2/R5）：DDS 命令行 -> control(CommandExecutor) -> 响应 ----
+    // 正常路径：get_data_stats（响应须带 cmd 回显前缀 + frames= 字段）
+    std::printf("[spa] oam remote cmd (DTS.oam.msg12 -> control)...\n");
+    const std::string r1 = OamCmdRoundtrip(comm, "get_data_stats");
+    if (!r1.empty()) {
+        std::fwrite(r1.data(), 1, r1.size() < 512 ? r1.size() : 512, stdout);
+        std::printf("\n");
+    }
+    const bool cmdOk = r1.find("cmd=get_data_stats") != std::string::npos &&
+                       r1.find("frames=") != std::string::npos;
+    std::printf("[spa] %s\n",
+                cmdOk ? "PASS (remote cmd via control verified)"
+                      : "FAIL (remote cmd no/invalid response)");
+    // 错误路径：未知命令（Execute 拒绝，响应含 not found）
+    const std::string r2 = OamCmdRoundtrip(comm, "no_such_cmd_test");
+    const bool cmdErrOk = r2.find("not found:") != std::string::npos;
+    std::printf("[spa] %s\n",
+                cmdErrOk ? "PASS (unknown cmd rejected with error)"
+                         : "FAIL (unknown cmd error path)");
+    return (ok && oamOk && cmdOk && cmdErrOk) ? 0 : 1;
 }

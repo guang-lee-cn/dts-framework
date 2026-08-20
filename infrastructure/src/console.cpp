@@ -18,6 +18,8 @@
 #include <vector>
 
 #include "ctl.h"
+#include "dts_def.h"
+#include "dts_mw.h"
 #include "log.h"
 #include "thread_api.h"
 
@@ -32,6 +34,7 @@ struct Job {
     std::mutex m;
     std::condition_variable cv;
     bool done = false;                // control 已执行完（resp 有效）
+    bool dds = false;                 // DDS 控制通道来源：无 socket 会话等待，响应由 control 发布
 };
 
 using JobPtr = std::shared_ptr<Job>;
@@ -157,6 +160,23 @@ void ConsoleLoop(void*) {
     }
 }
 
+// ---- DDS 控制通道响应：control 线程执行完发布（P1-3，D2/R5）----
+// 载荷 "cmd=<命令行>\n<Execute 输出>"：cmd 前缀让网管在并发请求下对答案。
+// 下电顺序（Process::Stop）保证本调用时 DtsMw 仍存活：control_stop 先于 comm 销毁。
+void PublishCtlResp(const std::string& line, const std::string& out) {
+    if (DtsMw() == nullptr) {
+        dts::log::Warn("[control] oam cmd resp drop: mw down");
+        return;
+    }
+    const std::string resp = "cmd=" + line + "\n" + out;
+    if (DtsMw()->publish_external(
+            detmw::endpoint{SESSION_TYPE_DTS, SESSION_INST_OAM, MSG_ID_OAM_CMD_RESP},
+            reinterpret_cast<const uint8_t*>(resp.data()),
+            static_cast<uint32_t>(resp.size())) != 0) {
+        dts::log::Warn("[control] oam cmd resp publish failed");
+    }
+}
+
 // ---- control 线程：消费队列 -> Execute -> 回填响应 ----
 void ControlLoop(void*) {
     while (true) {
@@ -171,6 +191,9 @@ void ControlLoop(void*) {
             g_queue.pop_front();
         }
         ctl::Execute(job->line, job->resp);
+        if (job->dds) {
+            PublishCtlResp(job->line, job->resp);  // DDS 来源无会话等待者，就地发布
+        }
         {
             std::lock_guard<std::mutex> lk(job->m);
             job->done = true;
@@ -285,6 +308,30 @@ void control_stop() {
         detsched::DestroyThread(g_controlH);
         g_controlH = nullptr;
     }
+}
+
+int control_submit_dds(std::unique_ptr<std::vector<uint8_t>> line) {
+    if (line == nullptr || line->empty()) {
+        dts::log::Warn("[control] oam cmd drop: empty payload");
+        return -1;
+    }
+    if (line->size() > kMaxLineLen) {
+        dts::log::Warn("[control] oam cmd drop: line too long ({} > {})", line->size(),
+                       kMaxLineLen);
+        return -1;
+    }
+    auto job = std::make_shared<Job>();
+    job->line.assign(reinterpret_cast<const char*>(line->data()), line->size());
+    job->dds = true;
+    {
+        std::lock_guard<std::mutex> lk(g_qMutex);
+        if (g_controlStop) {
+            return -1;  // control 未运行/下电中，静默丢弃（调用方是 detmw 接收回调，不能阻塞）
+        }
+        g_queue.push_back(job);
+    }
+    g_qCv.notify_one();
+    return 0;
 }
 
 }  // namespace dts

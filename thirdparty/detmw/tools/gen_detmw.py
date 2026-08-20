@@ -3,16 +3,19 @@
 
 用法: gen_detmw.py <config_dir> <output_dir>
 扫描 <config_dir> 下所有 <proc>.json（进程配置），产出：
-  <out>/<proc>/{task,data,log}_routes.h    线程路由头（Sub/Pub 分表，代码 include）
+  <out>/<proc>/{task,data,log,control}_routes.h  线程路由头（Sub/Pub 分表，代码 include）
   <out>/<proc>/<proc>.json                 进程生成配置（注入端点 entity_id/user_id，detmw 运行时加载）
   <out>/<proc>/staticdiscovery.xml         组静态发现端点目录（每进程目录各一份，内容一致）
 配置源（json）提交 + 评审，生成物构建期生成，不提交。
+
+control 头特殊：control 线程无 mailbox（不走业务组/msgId 表第三层路由），
+Sub 表供 run.cpp 注册 DDS 控制通道（消息直投 control 命令队列，D3 第二条传输）。
 """
 import json
 import os
 import sys
 
-INSTS = ("task", "data", "log")
+INSTS = ("task", "data", "log", "control")
 TOPIC_LEN = 128
 
 
@@ -116,8 +119,8 @@ def main():
         os.makedirs(odir, exist_ok=True)
 
         # 线程路由头：按 thread 分组，Sub/Pub 分表。
-        # 三个线程头**恒定生成**（无路由 = 空表）：startup 无条件 include 全部三个
-        # （run.cpp 引 task/data/log_routes.h），缺头会让纯单线程进程编不过
+        # 四个线程头**恒定生成**（无路由 = 空表）：startup 无条件 include 全部四个
+        # （run.cpp 引 task/data/log/control_routes.h），缺头会让纯单线程进程编不过
         for inst in INSTS:
             routes = [(t.get("session_type"), t.get("session_inst"), t.get("msg_id"), t.get("role"))
                       for t in p["topics"] if t.get("thread") == inst and t.get("msg_id") is not None]
