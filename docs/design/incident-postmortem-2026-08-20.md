@@ -1,7 +1,10 @@
 # bucket_rtps OOM 事故复盘
 
 > **事故窗口**：2026-08-17 ~ 2026-08-20 · **等级**：宿主虚拟机崩溃，会话断连 ×4
-> **方法论**：按 [incident-review 纪律](https://github.com/guang-lee-cn/skills/blob/master/review/incident-review.md)撰写与审计 · 事实流水见 [worklog/2026-08-20 §A](../worklog/2026-08-20.md)
+>
+> **方法论**：按 [incident-review 纪律](https://github.com/guang-lee-cn/skills/blob/master/review/incident-review/SKILL.md)撰写与审计
+>
+> **事实流水**：见 [worklog 2026-08-20 §A](../worklog/2026-08-20.md)
 
 **摘要（三行）**：
 
