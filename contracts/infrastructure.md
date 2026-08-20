@@ -69,6 +69,12 @@ void console_stop();
 int control_start();                        // 创建执行线程；返回 0 成功
 void control_stop();
 
+// DDS 控制通道入口（P1-3，D2/R5，2026-08-20 落地）：detmw 接收回调（网管远程命令行，
+// console 兼容语法）-> control 命令队列。D3 第二条传输：与 socket console 殊途同归，
+// 执行仍收敛 ctl::Execute；响应由 control 线程执行完经 DDS 发布（DTS.oam.0x000D，
+// 载荷 "cmd=<行>\n<输出>"），调用方不等待。空载荷/超长/control 停止时丢弃（Warn 日志）
+int control_submit_dds(std::unique_ptr<std::vector<uint8_t>> line);
+
 }  // namespace dts
 ```
 

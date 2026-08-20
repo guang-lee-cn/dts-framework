@@ -5,12 +5,14 @@
 
 ## 当前任务（ISO 重构）
 
-**阶段：迭代 2026-08-17 完成——确定性预算基石 + raw 零拷贝通道 v1 + 决策点 1 收敛（FastDDS 升级已排除，[评估](design/fastdds-upgrade-assessment.md)）+ 自研桶接入 detmw（DETMW_BUCKET=1，shm 不可用 fail-fast）+ bucket 测试纳入 ctest（环境自适应）+ **P0-1 上报帧超容截断修复（kCap 32K→48K，500 dataId 全量 34778B 零丢弃单测）+ P0-2 RT 严格模式（DTS_STRICT_SCHED=1 fail-fast，实测 exit=1）+ P1-1 预算阈值可配置（DTS_DATA_BUDGET_*_US 环境变量 + set_data_budget 命令）**。容量核算：100 帧 32K/100ms（1000 帧/s）超接收上限 950 帧/s ~5%。**待真实环境（/dev/shm）验证：按 [commercial-validation-checklist.md](design/commercial-validation-checklist.md) 执行；待办：P1-2 指标出口（OAM 业务组）、P1-3 远程控制通道（D2/R5）**。事件驱动语义确认：周期 tick 由外部 pub 控制，线程体现周期处理。**
+**阶段：迭代 2026-08-20——[断连事故根因修复：bucket 收缓冲钳制（max_msg_size=UINT32_MAX → min(·,maxMessageSize)，曾致 4 次 OOM 崩机，见 worklog 2026-08-20）](worklog/2026-08-20.md) + **P1-3 远程控制通道落地（D2/R5：DDS 命令行 → control → ctl::Execute，D3 两条传输收敛一处执行；本机接线验证 ✓，端到端待环境）+ bucket_smoke/bucket_rtps 首次真机 PASS（200×32K 零丢，2 拷贝 ~325MB/s）**。此前 2026-08-17：确定性预算基石 + raw 零拷贝 v1 + 自研桶接入 + FastDDS 升级排除 + P0-1/2/1-1/1-2 全落地。容量核算：1000 帧/s 超 UDP 基线 950 ~5%。**待真实环境（/dev/shm + 目标硬件）验证：按 [commercial-validation-checklist.md](design/commercial-validation-checklist.md) 执行（含 P1-3 往返 + 桶吞吐 ≥1100 帧/s）**。本机多端点发现面按端点数敏感劣化（cross_process/s_level 环境性 FAIL，单端点对/桶路径恒过——08-17 已定性非代码回归）。**
 
 ## 已建成（可运行，ctest 11 项：5 单测 + integration + cross_process + plain_smoke + s_level_perf + bucket×2(环境自适应)）
 
 - **raw 零拷贝通道 v1（2026-08-17）**：`FixedBytesType` 定长 plain 类型（配置 `plain_size`，严格定长，memcpy 序列化）+ 发送 loan_sample 尝试/回退 + 接收定长预分配；per-topic 类型表（缺省 BytesType 兼容）；类型所有权修复（TypeSupport 唯一拥有）；设计/决策点见 [docs/design/raw-zero-copy.md](design/raw-zero-copy.md)；验证：unit_fixed_type + plain_smoke（双进程 1KB 定长收全量）
 
+- **远程控制通道 P1-3（2026-08-20，D2/R5/D3）**：网管 DDS 命令行（`DTS.oam.0x000C`，console 兼容语法）→ `control_submit_dds` 入 control 队列 → `ctl::Execute`（与 socket console 殊途同归）→ 响应经 `DTS.oam.0x000D` 发布（载荷 `cmd=<行>\n<输出>`）；gen_detmw.py 第四线程头 `control_routes.h`（config `thread:"control"`）；接入配方见 worklog 2026-08-20 §B
+- **桶传输收缓冲钳制修复（2026-08-20，真 bug）**：FastDDS 传 `max_msg_size=UINT32_MAX`（非 secure 恒如此，min() 不封顶；内置 SHM 靠零拷贝读不分配），桶收线程曾按它 `vector(4GB)`×3 通道/进程 → 4 次 OOM 崩 WSL（08-17 ×2 + 08-20 ×2，journal 铁证）；修复 = OpenInputChannel 钳制到配置 maxMessageSize；bucket_rtps 首次真机 PASS（sub RSS 208MB，200×32K 零丢）
 - **detmw v2（D10，全 C++）**：`detmw::Communicator` + `detmw::endpoint`（==/hash/ToString），`TransportInterface` 抽象隔离底层 DDS；双 API `publish_external`（进程外）/`publish_internal`（进程内，**mailbox 直通已落地**：命中本进程订阅者免 DDS 序列化，见 contracts/detmw.md §3）
 - **确定性预算（2026-08-17）**：ThreadRun **绝对期限节拍**（持续负载下 TIMER 准点，修 TTL 停摆 bug，unit_thread_tick 回归）；data 单帧处理耗时打点（3ms 预警/5ms 告警，口径=线程内含业务代码）；静默丢弃计数（池满/超容/键失败）；console `get_data_stats` 查询（实测：30 帧 max 1.5ms 含预热，稳态 0.4ms，warn/alarm=0）
 - **三级消息路由（2026-08-16）**：sessionType 线程内固定 → sessionInst = **业务组**（线程可多组，mailbox 携带，借指针零拷贝）→ msgId 组内具体业务；第三层在 `{task|data|log}_msg_handler.cpp` 业务组数组表驱动（`{msgId, func(void* data, uint32_t datalen)}` 一行一消息流），`MsgTable`/`FindSessionTable`（msg_table.h）查表；编译期护栏 MsgIdsUnique + SessionGroupsValid；console `get_handlers` 按组可查
