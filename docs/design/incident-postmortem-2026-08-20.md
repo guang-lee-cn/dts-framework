@@ -1,6 +1,6 @@
 # bucket_rtps OOM 事故复盘（2026-08-17 ~ 08-20）
 
-> 按事故复盘纪律五段模板撰写（方法论：prompt 仓库 skills/review/incident-review.md）。
+> 按事故复盘纪律五段模板撰写（方法论：skills 仓库 [review/incident-review.md](https://github.com/guang-lee-cn/skills/blob/master/review/incident-review.md)）。
 > 事实流水见 [worklog/2026-08-20.md §A](../worklog/2026-08-20.md)，本文是完整复盘。
 
 ## 1. 事实（5W1H）
