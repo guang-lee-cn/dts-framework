@@ -5,20 +5,22 @@
 
 ## 当前任务（ISO 重构）
 
-**阶段：迭代 2026-08-20——[断连事故根因修复：bucket 收缓冲钳制（max_msg_size=UINT32_MAX → min(·,maxMessageSize)，曾致 4 次 OOM 崩机，见 worklog 2026-08-20）](worklog/2026-08-20.md) + **P1-3 远程控制通道落地（D2/R5：DDS 命令行 → control → ctl::Execute，D3 两条传输收敛一处执行；本机接线验证 ✓，端到端待环境）+ bucket_smoke/bucket_rtps 首次真机 PASS（200×32K 零丢，2 拷贝 ~325MB/s）**。此前 2026-08-17：确定性预算基石 + raw 零拷贝 v1 + 自研桶接入 + FastDDS 升级排除 + P0-1/2/1-1/1-2 全落地。容量核算：1000 帧/s 超 UDP 基线 950 ~5%。**待真实环境（/dev/shm + 目标硬件）验证：按 [commercial-validation-checklist.md](design/commercial-validation-checklist.md) 执行（含 P1-3 往返 + 桶吞吐 ≥1100 帧/s）**。本机多端点发现面按端点数敏感劣化（cross_process/s_level 环境性 FAIL，单端点对/桶路径恒过——08-17 已定性非代码回归）。**
+**阶段：迭代 2026-09-08——[web-server 落地（DDS→Kafka 沉淀→SSE 浏览器观测，替换 CSV 占位）](worklog/2026-09-08.md) + "环境劣化"根因破案（IP 分片重组不通，DETMW_UDP_MTU 开关修复，[契约](../contracts/webserver.md)）+ **全量 ctest 首次 12/12 全绿**（含 P1-3 端到端往返、s_level 32K 零丢）**。此前 08-20：OOM 断连根因修复（bucket 收缓冲钳制）+ P1-3 远程控制通道落地。**待真实环境（/dev/shm + 目标硬件）验证：按 [commercial-validation-checklist.md](design/commercial-validation-checklist.md) 执行（桶 32K 吞吐 ≥1100 帧/s；MTU 开关默认关闭态复验）**。事件驱动语义确认：周期 tick 由外部 pub 控制，线程体现周期处理。**
 
-## 已建成（可运行，ctest 11 项：5 单测 + integration + cross_process + plain_smoke + s_level_perf + bucket×2(环境自适应)）
+## 已建成（可运行，ctest 12 项：5 单测 + integration + cross_process + plain_smoke + s_level_perf + bucket×2 + web_smoke(环境自适应)；2026-09-08 首次 12/12 全绿）
 
 - **raw 零拷贝通道 v1（2026-08-17）**：`FixedBytesType` 定长 plain 类型（配置 `plain_size`，严格定长，memcpy 序列化）+ 发送 loan_sample 尝试/回退 + 接收定长预分配；per-topic 类型表（缺省 BytesType 兼容）；类型所有权修复（TypeSupport 唯一拥有）；设计/决策点见 [docs/design/raw-zero-copy.md](design/raw-zero-copy.md)；验证：unit_fixed_type + plain_smoke（双进程 1KB 定长收全量）
 
-- **远程控制通道 P1-3（2026-08-20，D2/R5/D3）**：网管 DDS 命令行（`DTS.oam.0x000C`，console 兼容语法）→ `control_submit_dds` 入 control 队列 → `ctl::Execute`（与 socket console 殊途同归）→ 响应经 `DTS.oam.0x000D` 发布（载荷 `cmd=<行>\n<输出>`）；gen_detmw.py 第四线程头 `control_routes.h`（config `thread:"control"`）；接入配方见 worklog 2026-08-20 §B
+- **web-server 进程（2026-09-08）**：dts 上报 → Kafka 沉淀 → 浏览器观测。`webserver/`（librdkafka 薄壳 + 自研 HTTP/SSE + 单文件观测页）+ podman Redpanda（tools/redpanda_up.sh）+ ctest web_smoke（强断言 Kafka 水位==收帧数）；演示 `tools/web_demo.sh` → http://localhost:8080。契约见 [contracts/webserver.md](../contracts/webserver.md)
+- **受限网络自适应 DETMW_UDP_MTU（2026-09-08 根因破案）**：本机 WSL IP 分片重组不通——多端点 SEDP 公告(>MTU 整报)/32K 用户数据即丢，08-17 以来"环境劣化"的真身。开关=RTPS 层分片（可靠重传）替代 IP 分片；cross/slevel/web 链默认 1400，性能链保持默认
+- **远程控制通道 P1-3（2026-08-20，D2/R5/D3）**：网管 DDS 命令行（`DTS.oam.0x000C`，console 兼容语法）→ `control_submit_dds` 入 control 队列 → `ctl::Execute`（与 socket console 殊途同归）→ 响应经 `DTS.oam.0x000D` 发布（载荷 `cmd=<行>\n<输出>`）；gen_detmw.py 第四线程头 `control_routes.h`（config `thread:"control"`）；**端到端已随 2026-09-08 全绿 ctest 验证（cross_process 内含往返断言）**
 - **桶传输收缓冲钳制修复（2026-08-20，真 bug）**：FastDDS 传 `max_msg_size=UINT32_MAX`（非 secure 恒如此，min() 不封顶；内置 SHM 靠零拷贝读不分配），桶收线程曾按它 `vector(4GB)`×3 通道/进程 → 4 次 OOM 崩 WSL（08-17 ×2 + 08-20 ×2，journal 铁证）；修复 = OpenInputChannel 钳制到配置 maxMessageSize；bucket_rtps 首次真机 PASS（sub RSS 208MB，200×32K 零丢）
 - **detmw v2（D10，全 C++）**：`detmw::Communicator` + `detmw::endpoint`（==/hash/ToString），`TransportInterface` 抽象隔离底层 DDS；双 API `publish_external`（进程外）/`publish_internal`（进程内，**mailbox 直通已落地**：命中本进程订阅者免 DDS 序列化，见 contracts/detmw.md §3）
 - **确定性预算（2026-08-17）**：ThreadRun **绝对期限节拍**（持续负载下 TIMER 准点，修 TTL 停摆 bug，unit_thread_tick 回归）；data 单帧处理耗时打点（3ms 预警/5ms 告警，口径=线程内含业务代码）；静默丢弃计数（池满/超容/键失败）；console `get_data_stats` 查询（实测：30 帧 max 1.5ms 含预热，稳态 0.4ms，warn/alarm=0）
 - **三级消息路由（2026-08-16）**：sessionType 线程内固定 → sessionInst = **业务组**（线程可多组，mailbox 携带，借指针零拷贝）→ msgId 组内具体业务；第三层在 `{task|data|log}_msg_handler.cpp` 业务组数组表驱动（`{msgId, func(void* data, uint32_t datalen)}` 一行一消息流），`MsgTable`/`FindSessionTable`（msg_table.h）查表；编译期护栏 MsgIdsUnique + SessionGroupsValid；console `get_handlers` 按组可查
 - **bootstrap Run 化**：`dts::Run(cfg)` 阻塞常驻 + `dts::Stop()`；`Process{StopSignal, comm, Worker×3, 订阅}` 自包含生命周期（装配→WaitStop→下电）；装配失败契约兑现（Communicator::good() + Start bool → Run 返回非 0，坏 cfg 实测退出非 0）
 - **console 控制面（2026-08-05 落地）**：`dts::ctl` 命令表（CommandRegistry/Execute）+ `console_start/stop`（AF_UNIX 长连接会话 socket 线程）+ `control_start/stop`（执行线程，BKG 低优先级）；内置 help/get_threads/set_log_level；bootstrap 装配起停；配套 [dts-cli.py](tools/dts-cli.py)（`login` REPL / `exec` 单条 / `ps` 发现），实测通过
-- **契约**：contracts/ 五份（detmw/infrastructure/contexts/bootstrap/detsched）
+- **契约**：contracts/ 六份（detmw/infrastructure/contexts/bootstrap/detsched/webserver）
 - **日志门面 dts::log**（已落地）：log.h/log.cpp + TsRotatingSink（target `dts_log`），变参模板转发 spdlog 保编译期检查；detmw/detsched/infrastructure/agent 全走门面，业务代码零 spdlog 直接调用；console+file 双 sink（时间戳文件+5MB 切分+总量 5G 删旧）；Run 返回回收线程池（5b44aca）
 - **远程**：github.com/guang-lee-cn/dts-framework（private），refactor + master 分支
 
