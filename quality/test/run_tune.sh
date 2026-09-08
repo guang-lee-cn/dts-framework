@@ -76,10 +76,10 @@ sleep 1
 kill -9 "$DTS_PID" 2>/dev/null
 
 echo "--- spa-mock ---"; grep -E "sent|handshake" /tmp/tune_spa.log || true
-echo "--- web-mock ---"; grep -E "report=" /tmp/tune_web.log || true
+echo "--- web-mock ---"; grep -E "total_recv=" /tmp/tune_web.log || true
 echo "--- dts data recv (reader[3]=msg3 raw) ---"; grep "reader\[3\]" /tmp/tune_dts.log || true
 
-WEB_FPS=$(grep "report=" /tmp/tune_web.log | grep -oE '[0-9.]+ fps' | grep -oE '[0-9.]+' | tail -1)
+WEB_FPS=$(grep "total_recv=" /tmp/tune_web.log | grep -oE '[0-9.]+ fps' | grep -oE '[0-9.]+' | tail -1)
 WEB_FPS=${WEB_FPS:-0}
 echo "=== result: spa_rc=$SPA_RC web_fps=$WEB_FPS ==="
 # PASS：spa 发成功 + web 收到上报（fps > 0）

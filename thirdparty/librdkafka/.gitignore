@@ -1,0 +1,3 @@
+# librdkafka 本地解包产物（跑 fetch.sh 生成）
+usr/
+*.deb

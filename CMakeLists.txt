@@ -23,6 +23,7 @@ add_subdirectory(agent)                   # dts-agent 独立库
 add_subdirectory(thirdparty/detsched)       # 确定性调度线程库
 add_subdirectory(thirdparty/detmw)          # 统一进程间通信中间件
 add_subdirectory(thirdparty/bucket)         # 自研桶传输（共享内存环 + TransportInterface 外壳）
+add_subdirectory(webserver)                 # web-server：dts 上报 → Kafka 沉淀 → 浏览器观测
 add_subdirectory(bootstrap)               # 组合根（上电装配，无编译产物）
 
 # detmw 配置组生成：cpf/dpf -> 线程路由头 + 进程生成配置 + 组静态发现 xml（构建期，产物进 build/）

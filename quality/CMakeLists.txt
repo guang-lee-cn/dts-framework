@@ -133,7 +133,9 @@ set(TUNE_GEN_OUTPUTS
   ${TUNE_GEN_DIR}/tune-spa/tune-spa.json
   ${TUNE_GEN_DIR}/tune-spa/staticdiscovery.xml
   ${TUNE_GEN_DIR}/tune-web/tune-web.json
-  ${TUNE_GEN_DIR}/tune-web/staticdiscovery.xml)
+  ${TUNE_GEN_DIR}/tune-web/staticdiscovery.xml
+  ${TUNE_GEN_DIR}/tune-web2/tune-web2.json
+  ${TUNE_GEN_DIR}/tune-web2/staticdiscovery.xml)
 add_custom_command(
   OUTPUT ${TUNE_GEN_OUTPUTS}
   COMMAND python3 ${DETMW_GEN_SCRIPT} ${TUNE_CFG_DIR} ${TUNE_GEN_DIR}
@@ -233,3 +235,11 @@ add_dependencies(plain_pub detmw_plain_gen)
 add_test(NAME plain_smoke
   COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/test/run_plain.sh
           $<TARGET_FILE:plain_dts> $<TARGET_FILE:plain_pub> ${PLAIN_GEN_DIR})
+
+
+# ---- web-server 功能链路：dts 上报 -> kafka 沉淀 -> SSE 观测（环境自适应）----
+add_test(NAME web_smoke
+  COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/test/run_web.sh
+          $<TARGET_FILE:tune_dts> $<TARGET_FILE:spa_mock_proc>
+          $<TARGET_FILE:web_server> ${TUNE_GEN_DIR})
+set_tests_properties(web_smoke PROPERTIES SKIP_RETURN_CODE "77")

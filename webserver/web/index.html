@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<title>DTS 上报观测</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font: 14px/1.5 "Cascadia Code", Consolas, "Noto Sans CJK SC", monospace;
+         background: #101418; color: #cdd6df; padding: 16px; }
+  h1 { font-size: 16px; color: #7fd1e8; margin-bottom: 12px; }
+  h1 .dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%;
+            margin-right: 8px; background: #d24a4a; }
+  h1 .dot.ok { background: #4ad27e; }
+  .cards { display: grid; grid-template-columns: repeat(6, 1fr); gap: 10px; margin-bottom: 14px; }
+  .card { background: #1a2129; border: 1px solid #2a3542; border-radius: 6px; padding: 10px 12px; }
+  .card .v { font-size: 22px; color: #e8f0f6; margin-top: 2px; }
+  .card .v.warn { color: #e8b34a; }
+  .card .u { color: #6b7a89; font-size: 12px; }
+  #chart { background: #1a2129; border: 1px solid #2a3542; border-radius: 6px;
+           width: 100%; height: 240px; margin-bottom: 14px; }
+  table { width: 100%; border-collapse: collapse; background: #1a2129;
+          border: 1px solid #2a3542; border-radius: 6px; overflow: hidden; }
+  th, td { text-align: right; padding: 5px 12px; border-bottom: 1px solid #232d38; }
+  th:nth-child(1), td:nth-child(1) { text-align: left; }
+  th { color: #6b7a89; font-weight: normal; font-size: 12px; }
+  tr:last-child td { border-bottom: none; }
+</style>
+</head>
+<body>
+<h1><span class="dot" id="dot"></span>DTS 上报观测 <span id="kstate" style="color:#6b7a89;font-size:12px"></span></h1>
+
+<div class="cards">
+  <div class="card">帧率(5s均值)<div class="v" id="fps">--</div><div class="u">fps</div></div>
+  <div class="card">吞吐(5s均值)<div class="v" id="mbps">--</div><div class="u">MB/s</div></div>
+  <div class="card">总帧数<div class="v" id="total">--</div><div class="u">frames</div></div>
+  <div class="card">总字节<div class="v" id="bytes">--</div><div class="u">MB</div></div>
+  <div class="card">seq 间断<div class="v" id="gaps">--</div><div class="u">gaps</div></div>
+  <div class="card">最近任务/序号<div class="v" id="last">--</div><div class="u">task / seq</div></div>
+</div>
+
+<canvas id="chart" width="1200" height="240"></canvas>
+
+<table>
+<thead><tr><th>时间</th><th>task</th><th>seq</th><th>切片数</th><th>dataId 范围</th><th>帧长(B)</th><th>kafka offset</th></tr></thead>
+<tbody id="rows"></tbody>
+</table>
+
+<script>
+"use strict";
+const MAX_POINTS = 60;
+const fpsHist = [], mbpsHist = [];
+
+function fmt(n, d) { return n == null ? "--" : n.toFixed(d == null ? 0 : d); }
+function mb(bytes) { return bytes / 1024 / 1024; }
+
+function onStats(j) {
+  fpsHist.push(j.fps_5s); mbpsHist.push(j.mbps_5s);
+  if (fpsHist.length > MAX_POINTS) { fpsHist.shift(); mbpsHist.shift(); }
+  document.getElementById("fps").textContent = fmt(j.fps_5s, 1);
+  document.getElementById("mbps").textContent = fmt(j.mbps_5s, 2);
+  document.getElementById("total").textContent = j.total_frames;
+  document.getElementById("bytes").textContent = fmt(mb(j.total_bytes), 1);
+  const gaps = document.getElementById("gaps");
+  gaps.textContent = j.gaps;
+  gaps.className = j.gaps > 0 ? "v warn" : "v";
+  document.getElementById("last").textContent = j.last_task + " / " + j.last_seq;
+  draw();
+}
+
+function onFrame(j) {
+  const rows = document.getElementById("rows");
+  const tr = document.createElement("tr");
+  const t = new Date();
+  const hh = String(t.getHours()).padStart(2, "0") + ":" +
+             String(t.getMinutes()).padStart(2, "0") + ":" +
+             String(t.getSeconds()).padStart(2, "0");
+  tr.innerHTML = "<td>" + hh + "</td><td>" + j.task + "</td><td>" + j.seq + "</td><td>" +
+                 j.slices + "</td><td>" + j.data_ids[0] + "~" + j.data_ids[1] + "</td><td>" +
+                 j.len + "</td><td>" + j.offset + "</td>";
+  rows.insertBefore(tr, rows.firstChild);
+  while (rows.children.length > 20) { rows.removeChild(rows.lastChild); }
+}
+
+function draw() {
+  const cv = document.getElementById("chart"), ctx = cv.getContext("2d");
+  const W = cv.width, H = cv.height, pad = 30;
+  ctx.clearRect(0, 0, W, H);
+  const maxF = Math.max(10, ...fpsHist) * 1.15;
+  const maxM = Math.max(1, ...mbpsHist) * 1.15;
+  ctx.strokeStyle = "#2a3542"; ctx.fillStyle = "#6b7a89"; ctx.font = "10px monospace";
+  for (let g = 0; g <= 4; g++) {
+    const y = pad + (H - 2 * pad) * g / 4;
+    ctx.beginPath(); ctx.moveTo(pad, y); ctx.lineTo(W - 8, y); ctx.stroke();
+    ctx.fillText(fmt(maxF * (1 - g / 4), 0), 2, y + 3);
+  }
+  const line = (arr, maxV, color) => {
+    if (arr.length < 2) { return; }
+    ctx.strokeStyle = color; ctx.lineWidth = 1.5; ctx.beginPath();
+    arr.forEach((v, i) => {
+      const x = pad + (W - pad - 8) * i / (MAX_POINTS - 1);
+      const y = pad + (H - 2 * pad) * (1 - v / maxV);
+      i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+    });
+    ctx.stroke();
+  };
+  line(fpsHist, maxF, "#4ad27e");
+  line(mbpsHist, maxM, "#7fd1e8");
+  ctx.fillStyle = "#4ad27e"; ctx.fillText("fps", W - 60, pad - 8);
+  ctx.fillStyle = "#7fd1e8"; ctx.fillText("MB/s", W - 30, pad - 8);
+}
+
+const es = new EventSource("/api/stream");
+es.addEventListener("stats", e => onStats(JSON.parse(e.data)));
+es.addEventListener("frame", e => onFrame(JSON.parse(e.data)));
+es.onopen = () => {
+  document.getElementById("dot").className = "dot ok";
+  document.getElementById("kstate").textContent = "";
+};
+es.onerror = () => {
+  document.getElementById("dot").className = "dot";
+  document.getElementById("kstate").textContent = "（连接断开，重连中…）";
+};
+fetch("/api/stats").then(r => r.json()).then(onStats).catch(() => {});
+</script>
+</body>
+</html>
