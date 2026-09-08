@@ -60,5 +60,5 @@ cmake --build build && ctest --test-dir build   # 全量（integration/cross_pro
 - detmw v2：[detmw.h](thirdparty/detmw/include/detmw.h) + [detmw.cpp](thirdparty/detmw/src/detmw.cpp) + [detmw_fastdds.cpp](thirdparty/detmw/src/detmw_fastdds.cpp)
 - 传输抽象：[detmw_transport.h](thirdparty/detmw/include/detmw_transport.h)
 - 契约：contracts/（五份）
-- 设计：[docs/design/dts-strategy.md](design/dts-strategy.md)（D1-D10）+ [docs/design/sub-bootstrap.md](design/sub-bootstrap.md)
+- 设计：[docs/design/dts-overview.md](design/dts-overview.md)（**技术全览：新读者入口**）+ [dts-strategy.md](design/dts-strategy.md)（D1-D10）+ [sub-bootstrap.md](design/sub-bootstrap.md)
 - ISO：[docs/iso-output.md](iso-output.md)（Insight/Strategy/Operation）
