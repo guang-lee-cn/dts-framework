@@ -15,6 +15,9 @@ ROUNDS=${5:-5}
 INTERVAL_US=${6:-1000000}   # S 级：1 条/s
 RAW_LEN=${7:-32768}
 export DTS_RAW_LEN=$RAW_LEN
+# 受限网络自适应：RTPS 报文钉在 MTU 内（RTPS 层分片，不依赖 IP 分片——WSL mirrored 等环境
+# IP 分片重组不通会让多端点 SEDP 公告整批丢失/32K UDP 不可达；见 detmw_fastdds.cpp DETMW_UDP_MTU）
+export DETMW_UDP_MTU=${DETMW_UDP_MTU:-1400}
 # web 收集窗口：spa 发完 ROUNDS 帧 + 前后发现/排空余量
 WEB_RUN_S=$((ROUNDS * INTERVAL_US / 1000000 + 8))
 

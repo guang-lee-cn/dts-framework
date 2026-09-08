@@ -15,6 +15,9 @@ DTS_CFG="$GEN_DIR/dts-test/dts-test.json"
 NFOAM_CFG="$GEN_DIR/nfoam/nfoam.json"
 SPA_CFG="$GEN_DIR/spa/spa.json"
 
+# 受限网络自适应：RTPS 报文钉在 MTU 内（RTPS 层分片，不依赖 IP 分片——WSL mirrored 等环境
+# IP 分片重组不通会让多端点 SEDP 公告整批丢失/32K UDP 不可达；见 detmw_fastdds.cpp DETMW_UDP_MTU）
+export DETMW_UDP_MTU=${DETMW_UDP_MTU:-1400}
 echo "=== cross-process test start ==="
 "$DTS_BIN" "$DTS_CFG" > /tmp/dts_test.log 2>&1 &
 DTS_PID=$!

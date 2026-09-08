@@ -15,7 +15,9 @@
 #include <fastdds/dds/topic/Topic.hpp>
 #include <fastdds/dds/topic/TopicDataType.hpp>
 #include <fastdds/dds/topic/TypeSupport.hpp>
+#include <fastdds/rtps/common/Locator.hpp>
 #include <fastdds/rtps/transport/UDPv4TransportDescriptor.hpp>
+#include <fastdds/utils/IPLocator.hpp>
 
 #include <atomic>
 #include <cstdlib>
@@ -231,12 +233,32 @@ public:
         DomainParticipantQos pqos = PARTICIPANT_QOS_DEFAULT;
         pqos.name(process_name);
 
-        // 诊断：DETMW_UDP_ONLY=1 强制 UDP（禁 SHM 内置传输），对比大包突发
-        if (std::getenv("DETMW_UDP_ONLY") != nullptr) {
+        // 诊断：DETMW_UDP_ONLY=1 强制 UDP（禁 SHM 内置传输），对比大包突发。
+        // DETMW_UDP_MTU=字节（如 1400）隐含 UDP 单传输，并把 RTPS 报文尺寸钉在 MTU 内：超出在
+        // RTPS 层分片（DATA_FRAG，可靠重传）而非交给 IP 分片。动机（2026-09-08 定界）：WSL
+        // mirrored 环境 IP 分片重组不通——多端点参与者的 SEDP 公告被打包成 >MTU 的单数据报后
+        // 整批丢失，表现为"参与者可见、端点全 0"（1 端点参与者不分片故正常）；32K 用户数据
+        // "UDP 不可达"同源。默认不设 = LAN 环境 IP 分片可用且更快。
+        // 注：FastDDS 要求各传输描述符 maxMessageSize ≤ max_msg_size_no_frag（内置传输默认
+        // 65500 不满足且触发其空指针段错误），故此模式必须显式建 UDP 描述符。
+        uint32_t udpMtu = 0;
+        if (const char* mtu = std::getenv("DETMW_UDP_MTU")) {
+            const uint32_t v = static_cast<uint32_t>(std::strtoul(mtu, nullptr, 10));
+            if (v >= 576 && v <= 65500) {
+                udpMtu = v;
+            }
+        }
+        if (std::getenv("DETMW_UDP_ONLY") != nullptr || udpMtu > 0) {
             auto udp = std::make_shared<UDPv4TransportDescriptor>();
+            if (udpMtu > 0) {
+                udp->maxMessageSize = udpMtu;
+                pqos.transport().max_msg_size_no_frag = udpMtu;
+            }
             pqos.transport().use_builtin_transports = false;
             pqos.transport().user_transports.push_back(udp);
-            dts::log::Warn("[detmw] UDP-only transport forced (DETMW_UDP_ONLY)");
+            dts::log::Warn("[detmw] UDP-only transport forced ({}{})",
+                           udpMtu > 0 ? "DETMW_UDP_MTU=" : "DETMW_UDP_ONLY",
+                           udpMtu > 0 ? std::to_string(udpMtu) + "B, RTPS-level fragmentation" : "");
         }
         // 自研桶传输（DETMW_BUCKET=1）：共享内存环替代内置 SHM 数据面
         // （绕开 FastDDS 3.6 Bug 8 析构 UAF + 512KB 段容量限制——上游 3.6.2/master 均未修，
@@ -264,6 +286,31 @@ public:
                 std::make_shared<UDPv4TransportDescriptor>());        // 发现面：UDP（EDP 组播/单播）
             dts::log::Warn("[detmw] bucket transport enabled (segment={}MB, discovery=UDP)",
                            bucket_desc->segment_size() / (1024 * 1024));
+        }
+        // 同机组发现加固（DETMW_LOCAL_PEERS=1）：元数据只走 127.0.0.1 单播、关元数据组播，
+        // 初始对端按 FastDDS 端口公式枚举本机参与者 0..15（PB=7400 DG=250 PG=2 d1=10）。
+        // 动机：WSL mirrored / WiFi 环境组播投递不稳，PDP/SEDP 公告丢失表现为"对端收 0"
+        // （2026-08-20 全天定界，端点越多越易挂）；同机部署本就不需要组播。跨机部署保持默认。
+        if (std::getenv("DETMW_LOCAL_PEERS") != nullptr) {
+            auto& builtin = pqos.wire_protocol().builtin;
+            builtin.metatrafficMulticastLocatorList.clear();
+            Locator_t meta;
+            IPLocator::setIPv4(meta, 127, 0, 0, 1);
+            meta.port = 0;  // 0 = 按域/参与者 id 公式分配，与对端枚举口径一致
+            builtin.metatrafficUnicastLocatorList.push_back(meta);
+            constexpr uint32_t kPB = 7400;
+            constexpr uint32_t kDG = 250;
+            constexpr uint32_t kPG = 2;
+            constexpr uint32_t kD1 = 10;
+            constexpr uint32_t kMaxPids = 16;
+            for (uint32_t pid = 0; pid < kMaxPids; ++pid) {
+                Locator_t peer;
+                IPLocator::setIPv4(peer, 127, 0, 0, 1);
+                peer.port = kPB + kDG * static_cast<uint32_t>(domain_id) + kD1 + kPG * pid;
+                builtin.initialPeersList.push_back(peer);
+            }
+            dts::log::Warn("[detmw] local-peers discovery: 127.0.0.1 unicast, multicast off, "
+                           "pids 0..{} (DETMW_LOCAL_PEERS)", kMaxPids - 1);
         }
         // 发现方案：默认动态 EDP（SIMPLE）；DETMW_STATIC=1 显式切回静态 EDP
         const bool use_static = std::getenv("DETMW_STATIC") != nullptr;
