@@ -7,3 +7,7 @@ __pycache__/
 .claude/
 .cache/
 compile_commands.json
+
+# 本地软链（指向仓库外路径，不应提交）
+.agents/skills/iso
+system_study-link
