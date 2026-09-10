@@ -2,6 +2,7 @@
 
 > 2026-08-17 · 适用：5G 基站数据采集中间件落地验收（data 100 帧 32K/100ms 负载模型）
 > 沙箱已完成的验证不重复（本清单 = 沙箱不可达项 + 商用专项，全部需 /dev/shm 与目标硬件）
+> 2026-09-10 修订：§1 测试数 11→12（补 `web_smoke`）并更新已在开发机转绿的项；桶/MTU 相关结论见 [worklog 2026-09-08](../worklog/2026-09-08.md)
 
 ## 0. 环境准备
 
@@ -12,9 +13,10 @@
 
 ## 1. 功能回归（全量 ctest，含 bucket 真跑）
 
-- [ ] `ctest --test-dir build --output-on-failure` —— 预期 11/11 过
-  - `bucket_smoke` / `bucket_rtps` 从 Skipped 变 **Passed**（shm 可用）——桶段多写者互斥 + 32K RTPS 端到端零丢
-  - `s_level_perf` 从 Failed 变 **Passed**（32K tune 链路零丢包）
+- [ ] `ctest --test-dir build --output-on-failure` —— 预期 **12/12** 过
+  - **前置**：`bash tools/redpanda_up.sh`（`web_smoke` 依赖 Kafka，broker 未起则该测试失败，非代码问题）
+  - `bucket_smoke` / `bucket_rtps`：2026-08-20 起开发机已 **Passed**——桶段多写者互斥 + 32K RTPS 端到端零丢；目标机属复验，非从 Skipped 转绿
+  - `s_level_perf`：2026-09-08 起开发机已 **Passed**（32K tune 链路零丢包）；其成立依赖 `DETMW_UDP_MTU=1400`，目标机 LAN 下须复验 `DETMW_UDP_MTU` **默认关闭态**（IP 分片可用则不需该开关）
 - [ ] `DETMW_BUCKET=1` 正常启动（不再 fail-fast）：日志含 `bucket transport enabled (segment=64MB, discovery=UDP)`
 - [ ] `DETMW_BUCKET=1 ctest -R plain_smoke` —— loan/零拷贝路径日志 `(loan/zero-copy)`
 
